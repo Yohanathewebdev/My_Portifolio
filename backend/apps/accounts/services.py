@@ -11,6 +11,7 @@ from apps.billing.services import free_plan
 from apps.core.audit import record_audit
 from apps.core.exceptions import ConflictError
 from apps.core.slug_registry import validate_reserved_slug
+from apps.portfolios.services import create_portfolio
 
 from .models import Account, AccountMembership, User
 from .passwords import validate_password_not_breached
@@ -50,8 +51,6 @@ def signup(
         role=AccountMembership.ROLE_OWNER,
         accepted_at=timezone.now(),
     )
-    from apps.portfolios.services import create_portfolio
-
     portfolio = create_portfolio(
         account=account,
         title=portfolio_title,

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from django.db import transaction
+
 from .models import EmailMessage
 from .tasks import send_email_message
 
@@ -18,5 +20,5 @@ def queue_email(
         defaults={"context": context},
     )
     if message.status != EmailMessage.STATUS_SENT:
-        send_email_message.delay(str(message.pk))
+        transaction.on_commit(lambda: send_email_message.delay(str(message.pk)))
     return message

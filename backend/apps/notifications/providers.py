@@ -29,7 +29,7 @@ class DjangoEmailProvider:
         message = DjangoEmailMessage(
             subject=subject,
             body=body,
-            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@example.com"),
+            from_email=settings.DEFAULT_FROM_EMAIL,
             to=[to_email],
         )
         message.send(fail_silently=False)

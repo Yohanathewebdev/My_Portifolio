@@ -7,6 +7,7 @@ from typing import Protocol
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.utils.module_loading import import_string
 
 
 class BreachedPasswordChecker(Protocol):
@@ -32,8 +33,13 @@ class HIBPPasswordChecker:
 
 
 def validate_password_not_breached(password: str, user=None) -> None:
-    if not getattr(settings, "BREACHED_PASSWORD_CHECK_ENABLED", True):
+    if not settings.BREACHED_PASSWORD_CHECK_ENABLED:
         return
-    checker: BreachedPasswordChecker = HIBPPasswordChecker()
-    if checker.is_breached(password):
+    checker_class = import_string(settings.BREACHED_PASSWORD_CHECKER)
+    checker: BreachedPasswordChecker = checker_class()
+    try:
+        breached = checker.is_breached(password)
+    except (OSError, urllib.error.URLError):
+        return
+    if breached:
         raise ValidationError("This password has appeared in a data breach.")

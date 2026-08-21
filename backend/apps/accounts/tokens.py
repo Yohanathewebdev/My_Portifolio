@@ -11,8 +11,13 @@ from django.utils import timezone
 
 from .models import AuthSession, User
 
-ACCESS_TOKEN_LIFETIME = timedelta(minutes=15)
-REFRESH_TOKEN_LIFETIME = timedelta(days=30)
+
+def access_token_lifetime() -> timedelta:
+    return timedelta(seconds=settings.AUTH_ACCESS_TOKEN_LIFETIME_SECONDS)
+
+
+def refresh_token_lifetime() -> timedelta:
+    return timedelta(days=settings.AUTH_REFRESH_TOKEN_LIFETIME_DAYS)
 
 
 class InvalidAccessToken(Exception):
@@ -39,10 +44,11 @@ def create_access_token(session: AuthSession, user: User) -> str:
             "sub": str(user.pk),
             "sid": str(session.pk),
             "iat": now,
-            "exp": now + ACCESS_TOKEN_LIFETIME,
+            "exp": now + access_token_lifetime(),
+            "iss": settings.AUTH_JWT_ISSUER,
             "type": "access",
         },
-        settings.SECRET_KEY,
+        settings.AUTH_JWT_SIGNING_KEY,
         algorithm="HS256",
     )
 
@@ -51,9 +57,10 @@ def decode_access_token(token: str) -> dict[str, object]:
     try:
         claims = jwt.decode(
             token,
-            settings.SECRET_KEY,
+            settings.AUTH_JWT_SIGNING_KEY,
             algorithms=["HS256"],
-            options={"require": ["sub", "sid", "iat", "exp", "type"]},
+            issuer=settings.AUTH_JWT_ISSUER,
+            options={"require": ["sub", "sid", "iat", "exp", "iss", "type"]},
         )
     except jwt.PyJWTError as exc:
         raise InvalidAccessToken from exc
@@ -75,7 +82,7 @@ def create_auth_session(
         token_hash=hash_token(raw_token),
         user_agent=user_agent[:1000],
         ip_hash=ip_hash,
-        expires_at=timezone.now() + REFRESH_TOKEN_LIFETIME,
+        expires_at=timezone.now() + refresh_token_lifetime(),
         last_used_at=timezone.now(),
     )
     return session, raw_token

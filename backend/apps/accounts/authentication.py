@@ -61,8 +61,9 @@ class AccessTokenAuthentication(BaseAuthentication):
             )
         except AuthSession.DoesNotExist as exc:
             raise AuthenticationFailed("Session is not valid.") from exc
-        if session.revoked_at is not None and not cache_unavailable:
-            mark_session_revoked(session_id)
+        if session.revoked_at is not None:
+            if not cache_unavailable:
+                mark_session_revoked(session_id)
             raise AuthenticationFailed("Session has been revoked.")
         user = cast(User, session.user)
         if not user.is_active:

@@ -2,6 +2,10 @@ import hashlib
 from unittest.mock import patch
 from urllib.error import URLError
 
+import pytest
+from django.core.exceptions import ValidationError
+from django.test import override_settings
+
 from apps.accounts.passwords import HIBPPasswordChecker, validate_password_not_breached
 
 
@@ -36,3 +40,32 @@ class _Response:
 
     def read(self):
         return self.body.encode()
+
+
+class FakeBreachedChecker:
+    def is_breached(self, password: str) -> bool:
+        return password == "compromised"
+
+
+class FakeUnavailableChecker:
+    def is_breached(self, password: str) -> bool:
+        raise OSError("provider unavailable")
+
+
+def test_configured_checker_rejects_reported_password():
+    with (
+        override_settings(
+            BREACHED_PASSWORD_CHECK_ENABLED=True,
+            BREACHED_PASSWORD_CHECKER=("apps.accounts.tests.test_passwords.FakeBreachedChecker"),
+        ),
+        pytest.raises(ValidationError),
+    ):
+        validate_password_not_breached("compromised")
+
+
+def test_configured_checker_provider_error_fails_open():
+    with override_settings(
+        BREACHED_PASSWORD_CHECK_ENABLED=True,
+        BREACHED_PASSWORD_CHECKER=("apps.accounts.tests.test_passwords.FakeUnavailableChecker"),
+    ):
+        validate_password_not_breached("any-password")

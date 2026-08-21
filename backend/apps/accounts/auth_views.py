@@ -5,9 +5,10 @@ from typing import cast
 
 from django.conf import settings
 from django.contrib.auth import authenticate
-from django.middleware.csrf import _does_token_match, get_token  # type: ignore[attr-defined]
+from django.core.cache import cache
+from django.middleware.csrf import get_token
 from django.utils.decorators import method_decorator
-from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from rest_framework import status
 from rest_framework.exceptions import AuthenticationFailed, PermissionDenied, Throttled
 from rest_framework.permissions import IsAuthenticated
@@ -28,6 +29,7 @@ from apps.api.auth_serializers import (
     VerificationSerializer,
 )
 from apps.core.views import NonTenantView, PublicReadOnlyView
+from apps.notifications.services import queue_email
 
 from .auth_services import (
     change_password,
@@ -49,11 +51,13 @@ from .auth_services import (
     verify_totp_or_recovery,
 )
 from .models import AuthSession, User
+from .services import signup
 from .throttling import ThrottleState, clear, get_state, key, record_failure
-from .tokens import RefreshTokenReplay, create_access_token
+from .tokens import RefreshTokenReplay, create_access_token, hash_token
 
-REFRESH_COOKIE = "portfolio_refresh"
+REFRESH_COOKIE_PATH = "/api/auth/refresh/"
 CHALLENGE_TTL = 300
+MAX_2FA_ATTEMPTS = 5
 
 
 class PublicAuthView(PublicReadOnlyView, APIView):  # type: ignore[misc]
@@ -64,26 +68,24 @@ class AuthenticatedAuthView(NonTenantView, APIView):
     permission_classes = [IsAuthenticated]
 
 
-def csrf_check(request) -> None:
-    cookie = request.COOKIES.get(settings.CSRF_COOKIE_NAME)
-    header = request.META.get("HTTP_X_CSRFTOKEN")
-    if not cookie or not header or not _does_token_match(header, cookie):
-        raise PermissionDenied("CSRF verification failed.")
-
-
 def set_refresh_cookie(response: Response, token: str) -> None:
     response.set_cookie(
-        REFRESH_COOKIE,
+        settings.AUTH_REFRESH_COOKIE,
         token,
-        max_age=30 * 24 * 60 * 60,
+        max_age=settings.AUTH_REFRESH_TOKEN_LIFETIME_DAYS * 24 * 60 * 60,
         httponly=True,
-        secure=True,
+        secure=settings.SESSION_COOKIE_SECURE,
         samesite="Strict",
+        path=REFRESH_COOKIE_PATH,
     )
 
 
 def clear_refresh_cookie(response: Response) -> None:
-    response.delete_cookie(REFRESH_COOKIE, samesite="Strict")
+    response.delete_cookie(
+        settings.AUTH_REFRESH_COOKIE,
+        samesite="Strict",
+        path=REFRESH_COOKIE_PATH,
+    )
 
 
 def _issue_response(user: User, request) -> Response:
@@ -125,8 +127,6 @@ def _record_login_failure(user: User | None, request, email: str) -> ThrottleSta
                 user=user,
                 after={"locked_until": state.locked_until.isoformat()},
             )
-            from apps.notifications.services import queue_email
-
             queue_email(
                 to_email=user.email,
                 template_code="login_lockout",
@@ -153,11 +153,15 @@ class SignupView(PublicAuthView):
     def post(self, request):
         serializer = SignupSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        from .services import signup
+        signup_identifier = key("signup-ip", hash_ip(request_ip(request)))
+        if get_state(signup_identifier).locked_until:
+            raise Throttled(detail="Signup temporarily locked.")
+        signup_state = record_failure(signup_identifier)
+        if signup_state.locked_until:
+            raise Throttled(detail="Signup temporarily locked.")
 
         user, account, _membership, _portfolio, _subscription = signup(**serializer.validated_data)
         raw = issue_verification_token(user)
-        from apps.notifications.services import queue_email
 
         queue_email(
             to_email=user.email,
@@ -166,7 +170,7 @@ class SignupView(PublicAuthView):
                 "subject": "Verify your Portfolio CMS email",
                 "body": f"Use this verification token: {raw}",
             },
-            related_object_ref=f"verification:{user.pk}",
+            related_object_ref=f"verification:{hash_token(raw)}",
         )
         return Response(
             {
@@ -195,26 +199,25 @@ class LoginView(PublicAuthView):
                 password=serializer.validated_data["password"],
             ),
         )
+        inactive_user = User.objects.filter(email=email, is_active=False).first()
+        if inactive_user is not None:
+            _record_login_failure(inactive_user, request, email)
+            raise AuthenticationFailed("Invalid email or password.")
         if user is None:
             _record_login_failure(User.objects.filter(email=email).first(), request, email)
             raise AuthenticationFailed("Invalid email or password.")
-        state = _record_login_failure(user, request, email) if not user.is_active else None
-        if state and state.locked_until:
-            raise Throttled(detail="Login temporarily locked.")
         if user.is_staff and not user.totp_enabled:
             raise PermissionDenied("Staff accounts require two-factor authentication.")
-        clear(keys[0])
         clear(keys[1])
         if user.totp_enabled:
             challenge_id = secrets.token_urlsafe(32)
-            from django.core.cache import cache
-
             cache.set(
                 f"auth:challenge:{challenge_id}",
                 {
                     "user_id": str(user.pk),
                     "user_agent": request.headers.get("User-Agent", ""),
                     "ip_hash": hash_ip(request_ip(request)),
+                    "attempts": 0,
                 },
                 CHALLENGE_TTL,
             )
@@ -228,8 +231,6 @@ class LoginTwoFactorView(PublicAuthView):
     def post(self, request):
         serializer = LoginChallengeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        from django.core.cache import cache
-
         challenge_key = f"auth:challenge:{serializer.validated_data['challenge_id']}"
         challenge = cache.get(challenge_key)
         if not isinstance(challenge, dict):
@@ -239,17 +240,25 @@ class LoginTwoFactorView(PublicAuthView):
         except User.DoesNotExist as exc:
             raise AuthenticationFailed("Invalid authentication challenge.") from exc
         if not verify_totp_or_recovery(user, serializer.validated_data["code"]):
+            attempts = int(challenge.get("attempts", 0)) + 1
+            record_auth_audit(action="login_2fa_failure", user=user)
+            if attempts >= MAX_2FA_ATTEMPTS:
+                cache.delete(challenge_key)
+                record_auth_audit(action="login_2fa_challenge_exhausted", user=user)
+            else:
+                challenge["attempts"] = attempts
+                cache.set(challenge_key, challenge, CHALLENGE_TTL)
             raise AuthenticationFailed("Invalid authenticator code.")
         cache.delete(challenge_key)
         return _issue_response(user, request)
 
 
+@method_decorator(csrf_protect, name="dispatch")
 class RefreshView(PublicAuthView):
     serializer_class = None
 
     def post(self, request):
-        csrf_check(request)
-        raw = request.COOKIES.get(REFRESH_COOKIE)
+        raw = request.COOKIES.get(settings.AUTH_REFRESH_COOKIE)
         if not raw:
             raise AuthenticationFailed("Refresh token is required.")
         try:
@@ -270,11 +279,11 @@ class RefreshView(PublicAuthView):
         return response
 
 
+@method_decorator(csrf_protect, name="dispatch")
 class LogoutView(AuthenticatedAuthView):
     serializer_class = None
 
     def post(self, request):
-        csrf_check(request)
         session_id = str(request.auth.get("sid"))
         session = AuthSession.objects.filter(pk=session_id, user=request.user).first()
         if session is not None:
@@ -285,11 +294,11 @@ class LogoutView(AuthenticatedAuthView):
         return response
 
 
+@method_decorator(csrf_protect, name="dispatch")
 class LogoutAllView(AuthenticatedAuthView):
     serializer_class = None
 
     def post(self, request):
-        csrf_check(request)
         revoke_all_sessions(request.user, actor=request.user)
         record_auth_audit(action="logout_all", user=request.user)
         response = Response(status=status.HTTP_204_NO_CONTENT)
@@ -324,7 +333,6 @@ class VerificationRequestView(PublicAuthView):
         user = User.objects.filter(email=email).first()
         if user is not None and not user.is_email_verified:
             raw = issue_verification_token(user)
-            from apps.notifications.services import queue_email
 
             queue_email(
                 to_email=user.email,
@@ -333,7 +341,7 @@ class VerificationRequestView(PublicAuthView):
                     "subject": "Verify your Portfolio CMS email",
                     "body": f"Use this verification token: {raw}",
                 },
-                related_object_ref=f"verification:{user.pk}",
+                related_object_ref=f"verification:{hash_token(raw)}",
             )
         return Response({"detail": "If the account exists, a verification email was queued."})
 
@@ -369,7 +377,6 @@ class PasswordResetRequestView(PublicAuthView):
         user = User.objects.filter(email=serializer.validated_data["email"].lower()).first()
         if user is not None:
             raw = issue_password_reset_token(user)
-            from apps.notifications.services import queue_email
 
             queue_email(
                 to_email=user.email,
@@ -378,7 +385,7 @@ class PasswordResetRequestView(PublicAuthView):
                     "subject": "Reset your Portfolio CMS password",
                     "body": f"Use this password reset token: {raw}",
                 },
-                related_object_ref=f"password-reset:{user.pk}",
+                related_object_ref=f"password-reset:{hash_token(raw)}",
             )
         return Response({"detail": "If the account exists, a reset email was queued."})
 

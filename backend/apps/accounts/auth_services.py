@@ -25,12 +25,12 @@ from .models import (
 )
 from .passwords import validate_password_not_breached
 from .tokens import (
-    REFRESH_TOKEN_LIFETIME,
     RefreshTokenReplay,
     create_access_token,
     create_auth_session,
     hash_token,
     new_refresh_token,
+    refresh_token_lifetime,
 )
 
 if TYPE_CHECKING:
@@ -225,7 +225,7 @@ def rotate_refresh_token(raw: str, *, user_agent: str = "", ip_hash: str = ""):
                 token_hash=hash_token(new_raw),
                 user_agent=user_agent[:1000],
                 ip_hash=ip_hash,
-                expires_at=timezone.now() + REFRESH_TOKEN_LIFETIME,
+                expires_at=timezone.now() + refresh_token_lifetime(),
                 last_used_at=timezone.now(),
             )
             session.replaced_by = replacement
@@ -252,7 +252,7 @@ def setup_totp(user: User) -> str:
     user.save(update_fields=["totp_pending_secret", "updated_at"])
     return pyotp.TOTP(secret).provisioning_uri(
         name=user.email,
-        issuer_name=getattr(settings, "TOTP_ISSUER", "Portfolio CMS"),
+        issuer_name=settings.TOTP_ISSUER,
     )
 
 

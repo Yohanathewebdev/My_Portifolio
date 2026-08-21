@@ -9,6 +9,7 @@ import pyotp
 import pytest
 from django.conf import settings
 from django.core.cache import cache
+from django.test import override_settings
 from rest_framework.exceptions import AuthenticationFailed, PermissionDenied, ValidationError
 from rest_framework.request import Request
 from rest_framework.test import APIClient, APIRequestFactory
@@ -36,6 +37,7 @@ from apps.accounts.tokens import (
     create_auth_session,
     decode_access_token,
 )
+from apps.notifications.models import EmailMessage
 from apps.portfolios.models import Portfolio
 from apps.portfolios.services import transition_publication
 
@@ -90,10 +92,25 @@ def test_revoked_session_access_token_is_rejected():
 def test_refresh_requires_csrf_header():
     user = make_user()
     token_data = issue_tokens(user)
-    client = APIClient()
+    client = APIClient(enforce_csrf_checks=True)
     client.cookies["portfolio_refresh"] = token_data["refresh"]
     response = client.post("/api/auth/refresh/")
     assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_refresh_accepts_django_csrf_header():
+    user = make_user()
+    token_data = issue_tokens(user)
+    client = APIClient(enforce_csrf_checks=True)
+    csrf_response = client.get("/api/auth/csrf/")
+    csrf_token = csrf_response.data["csrf_token"]
+    client.cookies["portfolio_refresh"] = token_data["refresh"]
+    response = client.post(
+        "/api/auth/refresh/",
+        HTTP_X_CSRFTOKEN=csrf_token,
+    )
+    assert response.status_code == 200
 
 
 @pytest.mark.django_db
@@ -167,8 +184,9 @@ def test_login_2fa_returns_challenge_before_tokens():
     assert completed.status_code == 200
     assert completed.data["access"]
     assert client.cookies["portfolio_refresh"]["httponly"]
-    assert client.cookies["portfolio_refresh"]["secure"]
+    assert bool(client.cookies["portfolio_refresh"]["secure"]) == settings.SESSION_COOKIE_SECURE
     assert client.cookies["portfolio_refresh"]["samesite"] == "Strict"
+    assert client.cookies["portfolio_refresh"]["path"] == "/api/auth/refresh/"
 
 
 @pytest.mark.django_db
@@ -196,6 +214,21 @@ def test_explicit_unverified_actor_cannot_publish_verified_actor_can():
     )
     portfolio.refresh_from_db()
     assert portfolio.publication_state == Portfolio.STATE_PUBLISHED
+
+
+@pytest.mark.django_db
+def test_publication_requires_an_explicit_actor():
+    account = make_account()
+    portfolio = Portfolio.all_objects.create(
+        account=account,
+        title="Publish",
+        slug="publish-missing-actor",
+    )
+    with pytest.raises(PermissionDenied):
+        transition_publication(
+            portfolio=portfolio,
+            target=Portfolio.STATE_PUBLISHED,
+        )
 
 
 @pytest.mark.django_db
@@ -233,9 +266,10 @@ def test_access_authentication_rejects_bad_headers_and_tokens():
             "sid": "session",
             "iat": datetime.now(UTC),
             "exp": datetime.now(UTC) + timedelta(minutes=5),
+            "iss": settings.AUTH_JWT_ISSUER,
             "type": "refresh",
         },
-        settings.SECRET_KEY,
+        settings.AUTH_JWT_SIGNING_KEY,
         algorithm="HS256",
     )
     with pytest.raises(InvalidAccessToken):
@@ -254,6 +288,9 @@ def test_access_authentication_cache_and_session_failure_paths():
         with pytest.raises(AuthenticationFailed):
             authenticator.authenticate(request)
     with patch("apps.accounts.authentication.cache.get", return_value=False):
+        authenticated = authenticator.authenticate(request)
+        assert authenticated is not None
+        assert authenticated[0] == user
         AuthSession.objects.filter(pk=token_data["session_id"]).delete()
         with pytest.raises(AuthenticationFailed):
             authenticator.authenticate(request)
@@ -262,7 +299,7 @@ def test_access_authentication_cache_and_session_failure_paths():
 
 
 @pytest.mark.django_db
-def test_access_authentication_fails_open_when_revocation_cache_is_down():
+def test_access_authentication_rejects_db_revocation_when_cache_is_down():
     user = make_user()
     token_data = issue_tokens(user)
     session = AuthSession.objects.get(pk=token_data["session_id"])
@@ -272,8 +309,8 @@ def test_access_authentication_fails_open_when_revocation_cache_is_down():
         APIRequestFactory().get("/", HTTP_AUTHORIZATION=f"Bearer {token_data['access']}")
     )
     with patch("apps.accounts.authentication.cache.get", side_effect=RuntimeError("redis down")):
-        authenticated, _claims = AccessTokenAuthentication().authenticate(request)
-    assert authenticated == user
+        with pytest.raises(AuthenticationFailed):
+            AccessTokenAuthentication().authenticate(request)
 
 
 @pytest.mark.django_db
@@ -301,3 +338,116 @@ def test_access_authentication_rejects_database_revocation_and_inactive_user():
     with patch("apps.accounts.authentication.cache.get", return_value=False):
         with pytest.raises(AuthenticationFailed):
             AccessTokenAuthentication().authenticate(inactive_request)
+
+
+@pytest.mark.django_db
+def test_two_factor_challenge_exhaustion_invalidates_challenge():
+    cache.clear()
+    user = make_user(totp_enabled=True, totp_secret=pyotp.random_base32())
+    client = APIClient()
+    login = client.post(
+        "/api/auth/login/",
+        {"email": user.email, "password": "Password123!"},
+        format="json",
+    )
+    challenge = login.data["challenge_id"]
+    for _ in range(5):
+        response = client.post(
+            "/api/auth/login/2fa/",
+            {"challenge_id": challenge, "code": "000000"},
+            format="json",
+        )
+        assert response.status_code == 401
+    assert cache.get(f"auth:challenge:{challenge}") is None
+
+
+@pytest.mark.django_db
+def test_inactive_user_is_rejected_from_login():
+    cache.clear()
+    user = make_user(is_active=False)
+    response = APIClient().post(
+        "/api/auth/login/",
+        {"email": user.email, "password": "Password123!"},
+        format="json",
+    )
+    assert response.status_code == 401
+    assert not AuthSession.objects.filter(user=user).exists()
+
+
+@pytest.mark.django_db
+def test_successful_login_only_clears_account_throttle_counter():
+    cache.clear()
+    user = make_user()
+    client = APIClient()
+    failed = client.post(
+        "/api/auth/login/",
+        {"email": user.email, "password": "wrong"},
+        format="json",
+    )
+    assert failed.status_code == 401
+    response = client.post(
+        "/api/auth/login/",
+        {"email": user.email, "password": "Password123!"},
+        format="json",
+    )
+    assert response.status_code == 200
+    assert get_state(key("account", user.email)).count == 0
+    assert get_state(key("ip", hash_ip("127.0.0.1"))).count >= 1
+
+
+@pytest.mark.django_db
+def test_signup_is_throttled_per_ip():
+    cache.clear()
+    client = APIClient()
+    for index in range(4):
+        response = client.post(
+            "/api/auth/signup/",
+            {
+                "email": f"signup-{index}@example.com",
+                "password": "Password123!",
+                "account_name": f"Signup {index}",
+                "account_slug": f"signup-{index}",
+                "portfolio_title": "Portfolio",
+                "portfolio_slug": f"portfolio-{index}",
+            },
+            format="json",
+        )
+        assert response.status_code == 201
+    response = client.post(
+        "/api/auth/signup/",
+        {
+            "email": "signup-locked@example.com",
+            "password": "Password123!",
+            "account_name": "Locked",
+            "account_slug": "signup-locked",
+            "portfolio_title": "Portfolio",
+            "portfolio_slug": "portfolio-locked",
+        },
+        format="json",
+    )
+    assert response.status_code == 429
+
+
+@pytest.mark.django_db
+def test_verification_requests_queue_distinct_messages_for_distinct_tokens():
+    cache.clear()
+    user = make_user(is_email_verified=False)
+    client = APIClient()
+    payload = {"email": user.email}
+    assert client.post("/api/auth/verification/request/", payload, format="json").status_code == 200
+    assert client.post("/api/auth/verification/request/", payload, format="json").status_code == 200
+    messages = EmailMessage.objects.filter(template_code="email_verification")
+    assert messages.count() == 2
+    assert messages.values_list("related_object_ref", flat=True).distinct().count() == 2
+
+
+@pytest.mark.django_db
+def test_access_tokens_use_configured_issuer_and_signing_key():
+    user = make_user()
+    with override_settings(
+        AUTH_JWT_ISSUER="test-issuer",
+        AUTH_JWT_SIGNING_KEY="test-signing-key-that-is-at-least-32-bytes",
+    ):
+        token_data = issue_tokens(user)
+        claims = decode_access_token(token_data["access"])
+    assert claims["iss"] == "test-issuer"
