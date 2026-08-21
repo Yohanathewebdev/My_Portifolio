@@ -1,4 +1,5 @@
 import factory
+from django.contrib.auth.hashers import make_password
 from django.utils import timezone
 
 from .models import Account, AccountMembership, User
@@ -7,10 +8,9 @@ from .models import Account, AccountMembership, User
 class UserFactory(factory.django.DjangoModelFactory[User]):
     class Meta:
         model = User
-        skip_postgeneration_save = True
 
     email = factory.Sequence(lambda n: f"user{n}@example.com")
-    password = factory.PostGenerationMethodCall("set_password", "Password123!")
+    password = factory.LazyFunction(lambda: make_password("Password123!"))
 
 
 class AccountFactory(factory.django.DjangoModelFactory[Account]):

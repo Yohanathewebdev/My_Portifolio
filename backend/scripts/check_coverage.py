@@ -8,6 +8,8 @@ required = {
     "backend/apps/core/exceptions.py": 100.0,
     "backend/apps/billing/entitlements.py": 100.0,
     "backend/apps/core/permissions.py": 100.0,
+    "backend/apps/accounts/tokens.py": 100.0,
+    "backend/apps/accounts/authentication.py": 100.0,
 }
 failures = []
 for path, minimum in required.items():
@@ -19,5 +21,5 @@ if failures:
     raise SystemExit("Coverage requirements failed:\n" + "\n".join(failures))
 print(
     "Targeted coverage gate passed: scoping, exception handler, entitlements, "
-    "and permission matrix are 100%."
+    "permission matrix, and authentication token/session modules are 100%."
 )

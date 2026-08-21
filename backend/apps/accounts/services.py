@@ -13,6 +13,7 @@ from apps.core.exceptions import ConflictError
 from apps.core.slug_registry import validate_reserved_slug
 
 from .models import Account, AccountMembership, User
+from .passwords import validate_password_not_breached
 
 if TYPE_CHECKING:
     from apps.portfolios.models import Portfolio
@@ -34,6 +35,7 @@ def signup(
         validate_reserved_slug(account_slug)
     except ValueError as exc:
         raise ValidationError({"account_slug": [str(exc)]}) from exc
+    validate_password_not_breached(password)
     user = User.objects.create_user(email=email, password=password)
     account = Account.all_objects.create(
         name=account_name,

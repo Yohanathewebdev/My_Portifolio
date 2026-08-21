@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.billing",
     "apps.portfolios",
+    "apps.notifications",
 ]
 AUTH_USER_MODEL = "accounts.User"
 PORTFOLIO_RESOLVER = "apps.portfolios.resolvers.resolve_portfolio"
@@ -115,9 +116,19 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "apps.core.pagination.StandardPagination",
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.SessionAuthentication",
+        "apps.accounts.authentication.AccessTokenAuthentication",
     ],
 }
+AUTH_JWT_ISSUER = "portfolio-cms"
+TOTP_ISSUER = "Portfolio CMS"
+AUTH_REFRESH_COOKIE = "portfolio_refresh"
+AUTH_ACCESS_TOKEN_LIFETIME_SECONDS = 900
+AUTH_REFRESH_TOKEN_LIFETIME_DAYS = 30
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = env("EMAIL_HOST", default="localhost")
+EMAIL_PORT = env("EMAIL_PORT", default=1025)
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="no-reply@portfolio.local")
+BREACHED_PASSWORD_CHECK_ENABLED = True
 SPECTACULAR_SETTINGS = {
     "TITLE": "Portfolio CMS API",
     "DESCRIPTION": "Phase 0 foundation API",
