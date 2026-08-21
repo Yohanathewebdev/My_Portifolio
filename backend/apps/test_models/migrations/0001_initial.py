@@ -1,3 +1,4 @@
+# ruff: noqa: E501, I001
 import uuid
 
 from django.db import migrations, models

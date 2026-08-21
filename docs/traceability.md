@@ -13,3 +13,6 @@
 | §28.3 health | `backend/apps/core/health.py` |
 | §29 deployment/CI | `infra/docker-compose.yml`, `.github/workflows/ci.yml` |
 | §32 Phase 0 DoD | scoping fixture test demonstrates an intentional violation |
+| §6 tenancy and roles | `backend/apps/accounts/`, `backend/apps/core/permissions.py` |
+| §7 billing and entitlements | `backend/apps/billing/`, billing seed migration, entitlement tests |
+| §24.3 scoped authorization | account/portfolio resolvers and scoped API viewsets |

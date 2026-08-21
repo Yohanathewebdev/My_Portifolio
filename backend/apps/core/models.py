@@ -20,7 +20,7 @@ class SoftDeleteModel(BaseModel):
     is_deleted = models.BooleanField(default=False)
     deleted_at = models.DateTimeField(null=True, blank=True)
     objects: ClassVar[SoftDeleteManager] = SoftDeleteManager()
-    all_objects: ClassVar[models.Manager["SoftDeleteModel"]] = models.Manager()
+    all_objects: ClassVar[models.Manager["SoftDeleteModel"]] = models.Manager()  # type: ignore[no-redef]
 
     class Meta:
         abstract = True
