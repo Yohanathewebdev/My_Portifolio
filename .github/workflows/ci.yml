@@ -42,6 +42,7 @@ jobs:
           CELERY_RESULT_BACKEND: redis://localhost:6379/2
       - run: uv run python backend/scripts/check_coverage.py
       - run: uv run python backend/scripts/check_billing_access.py
+      - run: PYTHONPATH=backend uv run python backend/scripts/check_auth_access.py
       - run: uv run python backend/manage.py makemigrations --check --dry-run
       - run: uv run python backend/manage.py spectacular --file openapi-schema.yml
       - uses: actions/upload-artifact@v4

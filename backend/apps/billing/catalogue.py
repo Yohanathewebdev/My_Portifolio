@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 FREE_ENTITLEMENTS = {
     "portfolios": 1,
@@ -63,16 +64,64 @@ STUDIO_ENTITLEMENTS = {
 @dataclass(frozen=True)
 class MetricSpec:
     key: str
-    period: str
+    period: Literal["monthly", "cumulative"]
+    measurement: str | None = None
+
+
+@dataclass(frozen=True)
+class EntitlementSpec:
+    key: str
+    kind: Literal["feature", "limit"]
 
 
 METRIC_REGISTRY = {
     "leads_month": MetricSpec("leads_month", "monthly"),
     "cv_renders_month": MetricSpec("cv_renders_month", "monthly"),
     "ai_credits_month": MetricSpec("ai_credits_month", "monthly"),
-    "storage_bytes": MetricSpec("storage_bytes", "cumulative"),
-    "portfolios": MetricSpec("portfolios", "cumulative"),
-    "cv_versions": MetricSpec("cv_versions", "cumulative"),
-    "blog_posts": MetricSpec("blog_posts", "cumulative"),
-    "team_members": MetricSpec("team_members", "cumulative"),
+    "storage_bytes": MetricSpec(
+        "storage_bytes", "cumulative", "apps.billing.entitlements.measure_storage_bytes"
+    ),
+    "portfolios": MetricSpec(
+        "portfolios", "cumulative", "apps.billing.entitlements.measure_portfolios"
+    ),
+    "cv_versions": MetricSpec(
+        "cv_versions", "cumulative", "apps.billing.entitlements.measure_cv_versions"
+    ),
+    "blog_posts": MetricSpec(
+        "blog_posts", "cumulative", "apps.billing.entitlements.measure_blog_posts"
+    ),
+    "team_members": MetricSpec(
+        "team_members", "cumulative", "apps.billing.entitlements.measure_team_members"
+    ),
 }
+
+ENTITLEMENT_REGISTRY = {
+    key: EntitlementSpec(key, "feature")
+    for key in (
+        "premium_themes",
+        "remove_branding",
+        "docx_export",
+        "scheduled_publishing",
+        "api_access",
+    )
+}
+ENTITLEMENT_REGISTRY.update(
+    {
+        key: EntitlementSpec(key, "limit")
+        for key in (
+            "portfolios",
+            "storage_bytes",
+            "custom_domain",
+            "cv_versions",
+            "cv_renders_month",
+            "leads_month",
+            "lead_retention_days",
+            "analytics_history_days",
+            "revision_history",
+            "preview_links",
+            "team_members",
+            "blog_posts",
+            "ai_credits_month",
+        )
+    }
+)

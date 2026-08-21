@@ -35,6 +35,14 @@ def test_member_of_another_account_gets_portfolio_404():
 
 
 @pytest.mark.django_db
+def test_anonymous_requests_are_denied_but_health_is_public():
+    account = make_account()
+    client = APIClient()
+    assert client.get(f"/api/accounts/{account.id}/").status_code in {401, 403}
+    assert client.get("/healthz").status_code == 200
+
+
+@pytest.mark.django_db
 def test_portfolio_creation_returns_entitlement_402_after_free_limit():
     user = make_user()
     account = make_account()
@@ -160,3 +168,26 @@ def test_portfolio_patch_records_slug_history_and_delete_is_scoped():
         client.delete(f"/api/accounts/{other.id}/portfolios/{other_portfolio.id}/").status_code
         == 404
     )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("slug", ["admin", "edited-portfolio"])
+def test_invalid_portfolio_slugs_return_400(slug):
+    user = make_user()
+    account = make_account()
+    MembershipFactory(account=account, user=user, role=AccountMembership.ROLE_OWNER)
+    portfolio = Portfolio.all_objects.create(
+        account=account,
+        title="Existing",
+        slug="edited-portfolio",
+    )
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.post(
+        f"/api/accounts/{account.id}/portfolios/",
+        {"title": "Invalid", "slug": slug},
+        format="json",
+    )
+    assert response.status_code == 400
+    assert "slug" in response.data["error"]["fields"]
+    assert portfolio.slug == "edited-portfolio"

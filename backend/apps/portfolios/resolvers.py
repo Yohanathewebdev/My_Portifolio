@@ -17,9 +17,9 @@ def resolve_portfolio(request):
         raise Http404
     try:
         portfolio = (
-            Portfolio.all_objects.get(pk=identifier)
+            Portfolio.all_objects.get(pk=identifier, is_deleted=False)
             if len(str(identifier)) == 36
-            else Portfolio.all_objects.get(slug=identifier)
+            else Portfolio.all_objects.get(slug=identifier, is_deleted=False)
         )
     except (Portfolio.DoesNotExist, ValueError):
         raise Http404 from None

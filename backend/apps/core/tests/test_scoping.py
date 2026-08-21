@@ -12,7 +12,7 @@ from rest_framework.viewsets import ViewSet
 from apps.accounts.factories import AccountFactory
 from apps.accounts.models import Account
 from apps.core.managers import PortfolioScopedManager, UnscopedQueryError
-from apps.core.scoping import check_urlconf
+from apps.core.scoping import check_authentication_urlconf, check_urlconf
 from apps.core.views import PortfolioScopedViewSet
 from apps.portfolios.models import Portfolio
 from apps.test_models.models import ScopedRecord
@@ -127,7 +127,7 @@ def test_real_model_write_paths_refresh_soft_delete_cascade_and_related_scope():
         ScopedRecord.objects.create_for_portfolio(portfolio, name="Cascade"),
     )
     portfolio.delete()
-    assert not ScopedRecord.all_objects.filter(pk=second.pk).exists()
+    assert ScopedRecord.all_objects.filter(pk=second.pk).exists()
 
 
 @pytest.mark.django_db
@@ -142,6 +142,13 @@ def test_real_model_unscoped_read_still_fails():
 
 
 class DeliberatelyUnscopedViewSet(ViewSet):
+    def list(self, request):
+        return Response([])
+
+
+class DeliberatelyAnonymousViewSet(ViewSet):
+    permission_classes = []
+
     def list(self, request):
         return Response([])
 
@@ -173,6 +180,29 @@ def test_production_urlconf_has_no_scoping_violations():
     import config.urls as urlconf
 
     assert check_urlconf(urlconf) == []
+
+
+def test_authentication_gate_reports_deliberately_anonymous_fixture():
+    fixture = SimpleNamespace(
+        urlpatterns=[
+            path(
+                "anonymous/",
+                DeliberatelyAnonymousViewSet.as_view({"get": "list"}),
+                name="anonymous",
+            ),
+            path("public/", FixtureView.as_view(), name="public"),
+        ]
+    )
+    violations = check_authentication_urlconf(fixture)
+    assert len(violations) == 1
+    assert violations[0].route == "anonymous/"
+    assert "DeliberatelyAnonymousViewSet" in violations[0].view_name
+
+
+def test_production_urlconf_has_no_authentication_violations():
+    import config.urls as urlconf
+
+    assert check_authentication_urlconf(urlconf) == []
 
 
 def test_scoping_gate_walks_nested_urlresolver():

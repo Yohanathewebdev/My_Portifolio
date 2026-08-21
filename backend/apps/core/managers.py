@@ -121,14 +121,16 @@ class AccountScopedQuerySet(models.QuerySet[models.Model]):
         clone._account_scope = self._account_scope
         return clone
 
-    def for_accounts(self, accounts: object) -> AccountScopedQuerySet:
+    def for_accounts(self, accounts: object, *, lookup: str) -> AccountScopedQuerySet:
         if accounts is None:
             raise ValueError("accounts are required")
         clone = self._clone()
         clone._account_scope = accounts
         field_names = {field.name for field in self.model._meta.get_fields()}
-        lookup = "account_id__in" if "account" in field_names else "pk__in"
-        return clone.filter(**{lookup: accounts})
+        clone = clone.filter(**{lookup: accounts})
+        if "is_deleted" in field_names:
+            clone = clone.filter(is_deleted=False)
+        return clone
 
     def _ensure_scope(self) -> None:
         if self._account_scope is None:
@@ -168,8 +170,14 @@ class AccountScopedQuerySet(models.QuerySet[models.Model]):
 
 
 class AccountScopedManager(models.Manager.from_queryset(AccountScopedQuerySet)):  # type: ignore[misc]
+    scope_lookup = "account_id__in"
+
     def get_queryset(self) -> AccountScopedQuerySet:
         raise UnscopedQueryError("Account-owned manager requires .for_accounts(accounts)")
 
     def for_accounts(self, accounts: object) -> AccountScopedQuerySet:
-        return super().get_queryset().for_accounts(accounts)
+        return super().get_queryset().for_accounts(accounts, lookup=self.scope_lookup)
+
+
+class PrimaryAccountScopedManager(AccountScopedManager):
+    scope_lookup = "pk__in"

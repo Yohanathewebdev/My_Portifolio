@@ -1,12 +1,18 @@
 from typing import cast
 
 import pytest
+from rest_framework.exceptions import ValidationError
 
 from apps.accounts.factories import AccountFactory, UserFactory
 from apps.accounts.models import Account, User
 from apps.core.exceptions import ConflictError
 from apps.portfolios.models import Portfolio, PortfolioSlugHistory
-from apps.portfolios.services import LEGAL_TRANSITIONS, transition_publication
+from apps.portfolios.services import (
+    LEGAL_TRANSITIONS,
+    create_portfolio,
+    transition_publication,
+    update_portfolio,
+)
 
 
 def make_account() -> Account:
@@ -20,17 +26,17 @@ def make_user() -> User:
 @pytest.mark.django_db
 def test_reserved_slug_and_historical_collision_rules():
     account = make_account()
-    portfolio = Portfolio.all_objects.create(account=account, title="One", slug="first")
-    with pytest.raises(ValueError):
-        Portfolio.all_objects.create(account=account, title="Reserved", slug="admin")
-    portfolio.slug = "second"
-    portfolio.save()
+    portfolio = create_portfolio(account=account, title="One", slug="first")
+    with pytest.raises(ValidationError) as reserved:
+        create_portfolio(account=account, title="Reserved", slug="admin")
+    assert reserved.value.status_code == 400
+    update_portfolio(portfolio=portfolio, slug="second")
     assert PortfolioSlugHistory.objects.get(portfolio=portfolio, old_slug="first")
     other = make_account()
-    with pytest.raises(ValueError):
-        Portfolio.all_objects.create(account=other, title="Collision", slug="first")
-    portfolio.slug = "first"
-    portfolio.save()
+    with pytest.raises(ValidationError) as collision:
+        create_portfolio(account=other, title="Collision", slug="first")
+    assert collision.value.status_code == 400
+    update_portfolio(portfolio=portfolio, slug="first")
     assert portfolio.slug == "first"
 
 

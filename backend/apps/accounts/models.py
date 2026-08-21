@@ -6,7 +6,7 @@ from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.db import models
 
-from apps.core.managers import AccountScopedManager
+from apps.core.managers import AccountScopedManager, PrimaryAccountScopedManager
 from apps.core.models import BaseModel
 from apps.core.slug_registry import validate_reserved_slug
 
@@ -63,7 +63,7 @@ class Account(BaseModel):
     country_code = models.CharField(max_length=2, blank=True)
     entitlement_overrides = models.JSONField(default=dict, blank=True)
 
-    objects: ClassVar[AccountScopedManager] = AccountScopedManager()
+    objects: ClassVar[PrimaryAccountScopedManager] = PrimaryAccountScopedManager()
     all_objects: ClassVar[models.Manager] = models.Manager()  # type: ignore[no-redef]
 
     class Meta:

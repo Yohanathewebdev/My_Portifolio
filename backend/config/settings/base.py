@@ -36,6 +36,8 @@ INSTALLED_APPS = [
 AUTH_USER_MODEL = "accounts.User"
 PORTFOLIO_RESOLVER = "apps.portfolios.resolvers.resolve_portfolio"
 ACCOUNT_RESOLVER = "apps.accounts.resolvers.resolve_accounts"
+ACCOUNT_REQUEST_RESOLVER = "apps.accounts.resolvers.resolve_account"
+MEMBERSHIP_ROLE_RESOLVER = "apps.accounts.resolvers.resolve_role"
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
@@ -111,6 +113,10 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "apps.core.exceptions.exception_handler",
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_PAGINATION_CLASS": "apps.core.pagination.StandardPagination",
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+    ],
 }
 SPECTACULAR_SETTINGS = {
     "TITLE": "Portfolio CMS API",

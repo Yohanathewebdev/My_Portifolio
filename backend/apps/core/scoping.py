@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from django.urls import URLResolver
+from rest_framework.permissions import AllowAny
 
 from .views import AccountScopedViewSet, PortfolioScopedViewSet, PublicReadOnlyView
 
@@ -17,6 +18,13 @@ SCOPING_ALLOWLIST = {
 
 @dataclass(frozen=True)
 class ScopingViolation:
+    route: str
+    view_name: str
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class AuthenticationViolation:
     route: str
     view_name: str
     reason: str = ""
@@ -51,6 +59,29 @@ def check_urlconf(urlconf, allowlist: dict[str, str] | None = None) -> list[Scop
                 route,
                 view_name,
                 "view is not portfolio-scoped, declared public, or explicitly allowlisted",
+            )
+        )
+    return violations
+
+
+def check_authentication_urlconf(urlconf) -> list[AuthenticationViolation]:
+    violations = []
+    for route, pattern in _patterns(urlconf.urlpatterns):
+        callback = pattern.callback
+        view_cls = getattr(callback, "cls", None)
+        view_name = getattr(view_cls, "__name__", getattr(callback, "__name__", repr(callback)))
+        if view_cls and issubclass(view_cls, PublicReadOnlyView):
+            continue
+        permission_classes = getattr(view_cls, "permission_classes", None)
+        if permission_classes and not any(
+            issubclass(permission_class, AllowAny) for permission_class in permission_classes
+        ):
+            continue
+        violations.append(
+            AuthenticationViolation(
+                route,
+                view_name,
+                "view must require authentication or inherit PublicReadOnlyView",
             )
         )
     return violations

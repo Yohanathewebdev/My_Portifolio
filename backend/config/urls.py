@@ -6,15 +6,24 @@ from apps.api.views import (
     AccountViewSet,
     CurrentUserViewSet,
     MembershipViewSet,
-    PortfolioDetailViewSet,
     PortfolioViewSet,
 )
 from apps.core.health import healthz, readyz
+from apps.core.views import PublicReadOnlyView
+
+
+class PublicSchemaView(PublicReadOnlyView, SpectacularAPIView):  # type: ignore[misc]
+    pass
+
+
+class PublicSwaggerView(PublicReadOnlyView, SpectacularSwaggerView):  # type: ignore[misc]
+    pass
+
 
 router = DefaultRouter()
 router.register("accounts", AccountViewSet, basename="account")
 router.register("me", CurrentUserViewSet, basename="me")
-router.register("portfolios", PortfolioDetailViewSet, basename="portfolio")
+router.register("portfolios", PortfolioViewSet, basename="portfolio")
 
 urlpatterns = [
     path("api/", include(router.urls)),
@@ -34,6 +43,11 @@ urlpatterns = [
         name="membership-role",
     ),
     path(
+        "api/accounts/<uuid:account_id>/members/<uuid:pk>/transfer-ownership/",
+        MembershipViewSet.as_view({"post": "transfer_ownership"}),
+        name="membership-transfer-ownership",
+    ),
+    path(
         "api/accounts/<uuid:account_id>/portfolios/",
         PortfolioViewSet.as_view({"get": "list", "post": "create"}),
         name="portfolio-list",
@@ -47,6 +61,6 @@ urlpatterns = [
     ),
     path("healthz", healthz, name="healthz"),
     path("readyz", readyz, name="readyz"),
-    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
-    path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
+    path("api/schema/", PublicSchemaView.as_view(), name="schema"),
+    path("api/docs/", PublicSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
 ]
