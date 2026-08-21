@@ -1,0 +1,25 @@
+from .base import *
+from .security import validate_production_security
+
+DEBUG = False
+CORS_ALLOW_ALL_ORIGINS = False
+validate_production_security(
+    debug=DEBUG,
+    secret_key=SECRET_KEY,
+    allowed_hosts=ALLOWED_HOSTS,
+    cors_allow_all=CORS_ALLOW_ALL_ORIGINS,
+)
+
+SECURE_SSL_REDIRECT = True
+SECURE_HSTS_SECONDS = 31536000
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = "DENY"
+SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = "Lax"
