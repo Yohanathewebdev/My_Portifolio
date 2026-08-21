@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any
+from uuid import UUID
 
-from django.db import transaction
+from django.contrib.auth.models import User
+from django.db import models, transaction
 
 from .models import AuditLog
 
@@ -11,13 +12,13 @@ from .models import AuditLog
 def record_audit(
     *,
     action: str,
-    target: Any,
-    actor: Any = None,
+    target: models.Model,
+    actor: User | None = None,
     actor_type: str = "system",
-    account_id: Any = None,
-    portfolio_id: Any = None,
-    before: dict[str, Any] | None = None,
-    after: dict[str, Any] | None = None,
+    account_id: UUID | None = None,
+    portfolio_id: UUID | None = None,
+    before: dict[str, object] | None = None,
+    after: dict[str, object] | None = None,
     ip_hash: str = "",
     correlation_id: str = "",
 ) -> AuditLog:

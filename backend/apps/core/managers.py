@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from django.db import models
 
 
@@ -9,13 +7,13 @@ class UnscopedQueryError(RuntimeError):
     """Raised when a portfolio-owned queryset is used without an explicit scope."""
 
 
-class SoftDeleteManager(models.Manager):
-    def get_queryset(self):
+class SoftDeleteManager(models.Manager[models.Model]):
+    def get_queryset(self) -> models.QuerySet[models.Model]:
         return super().get_queryset().filter(is_deleted=False)
 
 
-class PortfolioScopedQuerySet(models.QuerySet):
-    _portfolio_scope: Any = None
+class PortfolioScopedQuerySet(models.QuerySet[models.Model]):
+    _portfolio_scope: object | None = None
     _explicit_unscoped_reason: str | None = None
 
     def _clone(self):
@@ -24,7 +22,7 @@ class PortfolioScopedQuerySet(models.QuerySet):
         clone._explicit_unscoped_reason = self._explicit_unscoped_reason
         return clone
 
-    def for_portfolio(self, portfolio: Any) -> PortfolioScopedQuerySet:
+    def for_portfolio(self, portfolio: object) -> PortfolioScopedQuerySet:
         if portfolio is None:
             raise ValueError("portfolio is required")
         clone = self._clone()
@@ -38,24 +36,28 @@ class PortfolioScopedQuerySet(models.QuerySet):
         clone._explicit_unscoped_reason = reason
         return clone
 
-    def _ensure_scope(self):
+    def _ensure_scope(self) -> None:
         if self._portfolio_scope is None and self._explicit_unscoped_reason is None:
             raise UnscopedQueryError(
                 "Portfolio-owned query requires .for_portfolio(portfolio) or "
                 ".unscoped_explicit(reason=...)"
             )
 
-    def __iter__(self):
+    def _fetch_all(self) -> None:
         self._ensure_scope()
-        return super().__iter__()
+        super()._fetch_all()
 
-    def __bool__(self):
+    def aggregate(self, *args, **kwargs):
         self._ensure_scope()
-        return super().__bool__()
+        return super().aggregate(*args, **kwargs)
 
-    def get(self, *args, **kwargs):
+    def update(self, **kwargs):
         self._ensure_scope()
-        return super().get(*args, **kwargs)
+        return super().update(**kwargs)
+
+    def delete(self):
+        self._ensure_scope()
+        return super().delete()
 
     def count(self):
         self._ensure_scope()
@@ -65,19 +67,45 @@ class PortfolioScopedQuerySet(models.QuerySet):
         self._ensure_scope()
         return super().exists()
 
+    def get(self, *args, **kwargs):
+        self._ensure_scope()
+        return super().get(*args, **kwargs)
+
+    def in_bulk(self, *args, **kwargs):
+        self._ensure_scope()
+        return super().in_bulk(*args, **kwargs)
+
 
 class PortfolioScopedManager(models.Manager.from_queryset(PortfolioScopedQuerySet)):  # type: ignore[misc]
-    def get_queryset(self):
-        # Deliberately fail before constructing an executable unscoped query.
+    def get_queryset(self) -> PortfolioScopedQuerySet:
+        core_filters = getattr(self, "core_filters", None)
+        if isinstance(core_filters, dict) and "portfolio" in core_filters:
+            queryset = super().get_queryset().filter(is_deleted=False)
+            return queryset.for_portfolio(core_filters["portfolio"])
         raise UnscopedQueryError(
             "Portfolio-owned manager requires .for_portfolio(portfolio) or "
             ".unscoped_explicit(reason=...)"
         )
 
-    def for_portfolio(self, portfolio: Any) -> PortfolioScopedQuerySet:
+    def for_portfolio(self, portfolio: object) -> PortfolioScopedQuerySet:
         queryset = super().get_queryset()
         return queryset.filter(is_deleted=False).for_portfolio(portfolio)
 
     def unscoped_explicit(self, *, reason: str) -> PortfolioScopedQuerySet:
         queryset = super().get_queryset()
         return queryset.filter(is_deleted=False).unscoped_explicit(reason=reason)
+
+    def create_for_portfolio(self, portfolio: object, **kwargs: object) -> models.Model:
+        """Create through an explicit portfolio scope.
+
+        Use ``all_objects`` for administrative/system writes that intentionally
+        bypass tenant scoping.
+        """
+        if portfolio is None:
+            raise ValueError("portfolio is required")
+        if "portfolio" in kwargs and kwargs["portfolio"] != portfolio:
+            raise ValueError("portfolio argument conflicts with kwargs")
+        kwargs["portfolio"] = portfolio
+        instance = self.model(**kwargs)
+        instance.save(using=self._db)
+        return instance

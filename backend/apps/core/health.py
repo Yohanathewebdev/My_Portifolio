@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from urllib.request import urlopen
-
+import boto3
 import redis
 from celery import current_app
 from django.conf import settings
@@ -38,8 +37,15 @@ class ReadyzView(PublicReadOnlyView, APIView):
         except Exception:
             checks["redis"] = "error"
         try:
-            with urlopen(f"{settings.STORAGE_ENDPOINT}/minio/health/live", timeout=2):
-                checks["storage"] = "ok"
+            storage = boto3.client(
+                "s3",
+                endpoint_url=settings.STORAGE_ENDPOINT,
+                aws_access_key_id=settings.STORAGE_ACCESS_KEY,
+                aws_secret_access_key=settings.STORAGE_SECRET_KEY,
+                region_name=settings.STORAGE_REGION,
+            )
+            storage.list_buckets()
+            checks["storage"] = "ok"
         except Exception:
             checks["storage"] = "error"
         try:

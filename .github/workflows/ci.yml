@@ -38,6 +38,8 @@ jobs:
         env:
           DATABASE_URL: postgresql://portfolio:portfolio@localhost:5432/portfolio
           REDIS_URL: redis://localhost:6379/0
+          CELERY_BROKER_URL: redis://localhost:6379/1
+          CELERY_RESULT_BACKEND: redis://localhost:6379/2
       - run: uv run python backend/scripts/check_coverage.py
       - run: uv run python backend/manage.py makemigrations --check --dry-run
       - run: uv run python backend/manage.py spectacular --file openapi-schema.yml

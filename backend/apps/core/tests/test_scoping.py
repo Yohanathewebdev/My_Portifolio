@@ -2,7 +2,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from django.db import models
+from django.db.models import Count
 from django.urls import path
 from rest_framework.response import Response
 from rest_framework.test import APIRequestFactory
@@ -12,18 +12,8 @@ from rest_framework.viewsets import ViewSet
 from apps.core.managers import PortfolioScopedManager, UnscopedQueryError
 from apps.core.scoping import check_urlconf
 from apps.core.views import PortfolioScopedViewSet
-
-
-class ScopedRecord(models.Model):
-    portfolio = models.UUIDField()
-    is_deleted = models.BooleanField(default=False)
-
-    class Meta:
-        app_label = "core"
-        managed = False
-
-    def __str__(self):
-        return str(self.pk)
+from apps.test_models.models import ScopedRecord
+from apps.test_portfolios.models import Portfolio
 
 
 def test_unscoped_manager_operations_fail_loudly():
@@ -58,12 +48,79 @@ def test_queryset_operations_require_scope():
         queryset.count()
     with pytest.raises(UnscopedQueryError):
         queryset.exists()
+    with pytest.raises(UnscopedQueryError):
+        queryset.first()
+    with pytest.raises(UnscopedQueryError):
+        queryset[0]
+    with pytest.raises(UnscopedQueryError):
+        list(queryset.values_list("id", flat=True))
+    with pytest.raises(UnscopedQueryError):
+        queryset.aggregate(total=Count("id"))
+    with pytest.raises(UnscopedQueryError):
+        queryset.update(name="blocked")
+    with pytest.raises(UnscopedQueryError):
+        queryset.delete()
+    with pytest.raises(UnscopedQueryError):
+        queryset.in_bulk()
 
 
 def manager_queryset():
     from apps.core.managers import PortfolioScopedQuerySet
 
     return PortfolioScopedQuerySet(model=ScopedRecord)
+
+
+@pytest.mark.django_db
+def test_scoped_queryset_operations_execute_against_real_model():
+    portfolio = Portfolio.objects.create(name="Photographer")
+    first = cast(
+        ScopedRecord,
+        ScopedRecord.objects.create_for_portfolio(portfolio, name="First"),
+    )
+    second = cast(
+        ScopedRecord,
+        ScopedRecord.objects.create_for_portfolio(portfolio, name="Second"),
+    )
+    queryset = ScopedRecord.objects.for_portfolio(portfolio).order_by("name")
+
+    assert queryset.first() == first
+    assert queryset[0] == first
+    assert list(queryset.values_list("name", flat=True)) == ["First", "Second"]
+    assert queryset.aggregate(total=Count("id")) == {"total": 2}
+    assert queryset.filter(pk=second.pk).update(name="Updated") == 1
+    assert queryset.filter(pk=second.pk).delete()[0] == 1
+
+
+@pytest.mark.django_db
+def test_real_model_write_paths_refresh_soft_delete_cascade_and_related_scope():
+    portfolio = Portfolio.objects.create(name="Consultant")
+    record = cast(
+        ScopedRecord,
+        ScopedRecord.objects.create_for_portfolio(portfolio, name="Profile"),
+    )
+    assert record.portfolio_id == portfolio.pk
+
+    record.refresh_from_db()
+    assert record.name == "Profile"
+    assert list(portfolio.scopedrecord_set.all()) == [record]
+
+    record.delete()
+    assert not ScopedRecord.objects.for_portfolio(portfolio).filter(pk=record.pk).exists()
+    assert ScopedRecord.all_objects.filter(pk=record.pk).exists()
+
+    second = cast(
+        ScopedRecord,
+        ScopedRecord.objects.create_for_portfolio(portfolio, name="Cascade"),
+    )
+    portfolio.delete()
+    assert not ScopedRecord.all_objects.filter(pk=second.pk).exists()
+
+
+@pytest.mark.django_db
+def test_real_model_unscoped_read_still_fails():
+    Portfolio.objects.create(name="Engineer")
+    with pytest.raises(UnscopedQueryError):
+        ScopedRecord.objects.all()
 
 
 class DeliberatelyUnscopedViewSet(ViewSet):

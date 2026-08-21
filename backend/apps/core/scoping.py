@@ -44,5 +44,11 @@ def check_urlconf(urlconf, allowlist: dict[str, str] | None = None) -> list[Scop
             issubclass(view_cls, PortfolioScopedViewSet) or issubclass(view_cls, PublicReadOnlyView)
         ):
             continue
-        violations.append(ScopingViolation(route, view_name))
+        violations.append(
+            ScopingViolation(
+                route,
+                view_name,
+                "view is not portfolio-scoped, declared public, or explicitly allowlisted",
+            )
+        )
     return violations

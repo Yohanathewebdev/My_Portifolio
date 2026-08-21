@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping
+from typing import Any
 
 EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
 TOKEN_RE = re.compile(r"(?i)\b(?:bearer\s+|token[=:]\s*)[A-Z0-9._~+/=-]{8,}")
 
 
-def scrub(value):
+def scrub(value: Any) -> Any:
     if isinstance(value, str):
         value = TOKEN_RE.sub("[REDACTED_TOKEN]", value)
         return EMAIL_RE.sub("[REDACTED_EMAIL]", value)
@@ -26,3 +27,27 @@ class PiiScrubFilter(logging.Filter):
         record.msg = scrub(record.msg)
         record.args = scrub(record.args)
         return True
+
+
+class PiiScrubProcessor:
+    def __call__(
+        self, _logger: Any, _method_name: str, event_dict: MutableMapping[str, Any]
+    ) -> Mapping[str, Any]:
+        return scrub(event_dict)
+
+
+def configure_structlog(*, json_logs: bool) -> None:
+    import structlog
+
+    renderer = structlog.processors.JSONRenderer() if json_logs else structlog.dev.ConsoleRenderer()
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso"),
+            PiiScrubProcessor(),
+            renderer,
+        ],
+        logger_factory=structlog.PrintLoggerFactory(),
+        cache_logger_on_first_use=False,
+    )

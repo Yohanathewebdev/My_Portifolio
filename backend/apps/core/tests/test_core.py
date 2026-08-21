@@ -1,6 +1,8 @@
+import json
 import logging
 
 import pytest
+import structlog
 from django.test import RequestFactory
 from rest_framework.exceptions import NotFound
 
@@ -12,6 +14,7 @@ from apps.core.exceptions import (
 )
 from apps.core.logging import PiiScrubFilter
 from apps.core.managers import UnscopedQueryError
+from apps.core.middleware import CorrelationIdMiddleware
 from apps.core.models import AuditLog
 from apps.core.pagination import StandardPagination
 
@@ -31,6 +34,30 @@ def test_error_envelope_for_conflict():
     assert response.data["error"]["code"] == "conflict"
     assert response.data["error"]["correlation_id"] == "cid"
     assert response.data["error"]["fields"] == {"current_version": 4, "expected_version": 3}
+
+
+def test_generated_correlation_id_is_in_error_envelope_and_response_header():
+    captured = {}
+
+    def get_response(request):
+        captured["response"] = exception_handler(RuntimeError("internal"), {"request": request})
+        return captured["response"]
+
+    response = CorrelationIdMiddleware(get_response)(RequestFactory().get("/"))
+    generated_id = response["X-Correlation-ID"]
+    assert generated_id
+    assert response.data["error"]["correlation_id"] == generated_id
+
+
+def test_correlation_context_is_restored_when_request_raises():
+    structlog.contextvars.clear_contextvars()
+
+    def get_response(_request):
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError):
+        CorrelationIdMiddleware(get_response)(RequestFactory().get("/"))
+    assert structlog.contextvars.get_contextvars() == {}
 
 
 def test_entitlement_error_fields():
@@ -74,6 +101,24 @@ def test_log_scrubbing_redacts_email_and_token(caplog):
     assert "abcdefghijklmnop" not in caplog.text
     assert "[REDACTED_EMAIL]" in caplog.text
     assert "[REDACTED_TOKEN]" in caplog.text
+
+
+def test_structlog_outputs_json_with_correlation_and_scrubbed_pii(capsys):
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(correlation_id="cid")
+    structlog.get_logger("portfolio.test").info(
+        "authentication",
+        email="person@example.com",
+        token="Bearer abcdefghijklmnop",
+    )
+    output = capsys.readouterr().out
+    payload = json.loads(output)
+    assert payload["correlation_id"] == "cid"
+    assert "person@example.com" not in output
+    assert "abcdefghijklmnop" not in output
+    assert payload["email"] == "[REDACTED_EMAIL]"
+    assert payload["token"] == "[REDACTED_TOKEN]"
+    structlog.contextvars.clear_contextvars()
 
 
 @pytest.mark.django_db

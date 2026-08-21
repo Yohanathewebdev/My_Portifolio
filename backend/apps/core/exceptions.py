@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from rest_framework import exceptions
 from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
@@ -31,22 +29,24 @@ class ConflictError(exceptions.APIException):
     def __init__(
         self,
         detail: str = "The resource version conflicts.",
-        current_version=None,
-        expected_version=None,
+        current_version: int | None = None,
+        expected_version: int | None = None,
     ):
         self.current_version = current_version
         self.expected_version = expected_version
         super().__init__(detail)
 
 
-def exception_handler(exc: Exception, context: dict[str, Any]) -> Response:
+def exception_handler(exc: Exception, context: dict[str, object]) -> Response:
     response = drf_exception_handler(exc, context)
-    correlation_id = context["request"].META.get("HTTP_X_CORRELATION_ID", "")
+    request = context["request"]
+    meta = getattr(request, "META", {})
+    correlation_id = getattr(request, "correlation_id", "") or meta.get("HTTP_X_CORRELATION_ID", "")
     if isinstance(exc, UnscopedQueryError):
         status = 500
         code = "internal_error"
         message = "An internal error occurred."
-        fields: dict[str, Any] = {}
+        fields: dict[str, object] = {}
     elif response is None:
         status = 500
         code = "internal_error"

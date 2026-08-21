@@ -19,7 +19,7 @@ class BaseModel(models.Model):
 class SoftDeleteModel(BaseModel):
     is_deleted = models.BooleanField(default=False)
     deleted_at = models.DateTimeField(null=True, blank=True)
-    objects: ClassVar[models.Manager["SoftDeleteModel"]] = SoftDeleteManager()
+    objects: ClassVar[SoftDeleteManager] = SoftDeleteManager()
     all_objects: ClassVar[models.Manager["SoftDeleteModel"]] = models.Manager()
 
     class Meta:
@@ -39,10 +39,12 @@ class PortfolioOwnedModel(SoftDeleteModel):
         on_delete=models.CASCADE,
         related_name="%(class)s_set",
     )
-    objects = PortfolioScopedManager()
+    objects: ClassVar[PortfolioScopedManager] = PortfolioScopedManager()
 
     class Meta:
         abstract = True
+        base_manager_name = "all_objects"
+        default_manager_name = "objects"
         indexes = [models.Index(fields=["portfolio", "-created_at"])]
 
 

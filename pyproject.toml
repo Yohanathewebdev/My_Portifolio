@@ -13,6 +13,8 @@ dependencies = [
   "django-environ==0.12.0",
   "django-cors-headers==4.7.0",
   "structlog==25.4.0",
+  "boto3==1.40.18",
+  "argon2-cffi==25.1.0",
 ]
 
 [dependency-groups]
@@ -75,10 +77,5 @@ root_package = "apps"
 [[tool.importlinter.contracts]]
 name = "Core is the foundation"
 type = "layers"
-layers = ["apps.api", "apps.public", "apps.domain", "apps.core"]
-
-[[tool.importlinter.contracts]]
-name = "Domain apps do not import each other directly"
-type = "forbidden"
-source_modules = ["apps.domain"]
-forbidden_modules = ["apps.domain.accounts", "apps.domain.billing"]
+layers = ["apps.api", "apps.public", "apps.core"]
+# Domain-app contracts are added when Phase 1 introduces concrete domain apps.

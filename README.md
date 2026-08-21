@@ -18,9 +18,16 @@ curl http://127.0.0.1:8000/healthz
 curl http://127.0.0.1:8000/readyz
 ```
 
-The Phase 0 test settings use an in-memory SQLite database, while Compose
-provides the local PostgreSQL, Redis, MinIO, and MailHog services used by later
-phases.
+The Phase 0 test settings use the Compose PostgreSQL and Redis services, so
+tests exercise the same database semantics as deployment. Compose also
+provides MinIO and MailHog.
+
+Portfolio-owned querysets fail closed unless they are scoped with
+`.for_portfolio(portfolio)` or deliberately opened with
+`.unscoped_explicit(reason=...)`. Tenant writes use
+`PortfolioOwnedModel.objects.create_for_portfolio(portfolio, **fields)`;
+administrative or system writes that intentionally bypass tenant scope use
+`all_objects`.
 
 ## Checks
 

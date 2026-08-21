@@ -2,6 +2,8 @@ from pathlib import Path
 
 import environ
 
+from apps.core.logging import configure_structlog
+
 BASE_DIR = Path(__file__).resolve().parents[3]
 env = environ.Env(
     DEBUG=(bool, False),
@@ -10,7 +12,7 @@ env = environ.Env(
 if (BASE_DIR / ".env").exists():
     environ.Env.read_env(BASE_DIR / ".env")
 
-SECRET_KEY = env("DJANGO_SECRET_KEY", default="phase-0-insecure-development-key")
+SECRET_KEY = env("DJANGO_SECRET_KEY", default="")
 DEBUG = env("DJANGO_DEBUG", default=False)
 ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 ROOT_URLCONF = "config.urls"
@@ -53,7 +55,12 @@ TEMPLATES = [
     }
 ]
 
-DATABASES = {"default": env.db("DATABASE_URL", default="sqlite:///db.sqlite3")}
+DATABASES = {
+    "default": env.db(
+        "DATABASE_URL",
+        default="postgresql://portfolio:portfolio@localhost:5432/portfolio",
+    )
+}
 REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/1")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://localhost:6379/2")
@@ -67,6 +74,7 @@ STORAGE_ENDPOINT = env("STORAGE_ENDPOINT", default="http://localhost:9000")
 STORAGE_BUCKET = env("STORAGE_BUCKET", default="portfolio-media")
 STORAGE_ACCESS_KEY = env("STORAGE_ACCESS_KEY", default="minioadmin")
 STORAGE_SECRET_KEY = env("STORAGE_SECRET_KEY", default="minioadmin")
+STORAGE_REGION = env("STORAGE_REGION", default="us-east-1")
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
@@ -74,9 +82,24 @@ USE_I18N = True
 USE_TZ = True
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-AUTH_PASSWORD_VALIDATORS: list = []
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
+    "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
+    "django.contrib.auth.hashers.ScryptPasswordHasher",
+]
 CORRELATION_ID_HEADER = env("CORRELATION_ID_HEADER", default="X-Correlation-ID")
 ROOT_LOGGER_NAME = "portfolio"
+CORS_ALLOW_ALL_ORIGINS = False
+
+configure_structlog(json_logs=True)
 
 REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "apps.core.exceptions.exception_handler",
