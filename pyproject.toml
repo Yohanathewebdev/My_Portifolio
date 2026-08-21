@@ -52,7 +52,7 @@ quote-style = "double"
 DJANGO_SETTINGS_MODULE = "config.settings.test"
 pythonpath = ["backend"]
 testpaths = ["backend/apps"]
-addopts = "--cov=backend/apps/core --cov=backend/config --cov-report=term-missing --cov-report=json --cov-fail-under=85"
+addopts = "--cov=backend/apps/core --cov=apps.billing.entitlements --cov=apps.core.permissions --cov=backend/config --cov-report=term-missing --cov-report=json --cov-fail-under=85"
 
 [tool.coverage.run]
 branch = true
@@ -77,5 +77,8 @@ root_package = "apps"
 [[tool.importlinter.contracts]]
 name = "Core is the foundation"
 type = "layers"
-layers = ["apps.api", "apps.public", "apps.core"]
-# Domain-app contracts are added when Phase 1 introduces concrete domain apps.
+layers = [
+  "apps.api",
+  "apps.public",
+  "apps.core",
+]
