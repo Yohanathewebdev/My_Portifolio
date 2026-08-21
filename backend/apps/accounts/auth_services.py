@@ -61,7 +61,16 @@ def record_auth_audit(
 
 
 def request_ip(request: HttpRequest) -> str:
-    return request.META.get("REMOTE_ADDR", "")
+    remote_addr = request.META.get("REMOTE_ADDR", "")
+    trusted_proxies = set(settings.AUTH_TRUSTED_PROXIES)
+    if remote_addr not in trusted_proxies:
+        return remote_addr
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    forwarded_chain = [value.strip() for value in forwarded_for.split(",") if value.strip()]
+    for address in reversed([*forwarded_chain, remote_addr]):
+        if address not in trusted_proxies:
+            return address
+    return remote_addr
 
 
 def issue_token(raw_value: str, model, user: User, lifetime: timedelta):

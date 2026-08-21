@@ -119,12 +119,14 @@ REST_FRAMEWORK = {
         "apps.accounts.authentication.AccessTokenAuthentication",
     ],
 }
+CSRF_FAILURE_VIEW = "apps.core.exceptions.csrf_failure"
 AUTH_JWT_ISSUER = "portfolio-cms"
 AUTH_JWT_SIGNING_KEY = env("AUTH_JWT_SIGNING_KEY", default=SECRET_KEY)
 TOTP_ISSUER = "Portfolio CMS"
 AUTH_REFRESH_COOKIE = env("AUTH_REFRESH_COOKIE", default="portfolio_refresh")
 AUTH_ACCESS_TOKEN_LIFETIME_SECONDS = env("AUTH_ACCESS_TOKEN_LIFETIME_SECONDS", default=900)
 AUTH_REFRESH_TOKEN_LIFETIME_DAYS = env("AUTH_REFRESH_TOKEN_LIFETIME_DAYS", default=30)
+AUTH_TRUSTED_PROXIES = env("AUTH_TRUSTED_PROXIES", default=[])
 EMAIL_BACKEND = env("EMAIL_BACKEND", default="")
 EMAIL_HOST = env("EMAIL_HOST", default="")
 EMAIL_PORT = env("EMAIL_PORT", default=25)

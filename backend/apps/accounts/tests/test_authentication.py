@@ -21,6 +21,7 @@ from apps.accounts.auth_services import (
     issue_password_reset_token,
     issue_tokens,
     issue_verification_token,
+    request_ip,
     reset_password,
     revoke_session,
     rotate_refresh_token,
@@ -94,8 +95,17 @@ def test_refresh_requires_csrf_header():
     token_data = issue_tokens(user)
     client = APIClient(enforce_csrf_checks=True)
     client.cookies["portfolio_refresh"] = token_data["refresh"]
-    response = client.post("/api/auth/refresh/")
+    response = client.post("/api/auth/refresh/", HTTP_X_CORRELATION_ID="csrf-test")
     assert response.status_code == 403
+    assert response["Content-Type"].startswith("application/json")
+    assert response.json() == {
+        "error": {
+            "code": "csrf_failed",
+            "message": "CSRF verification failed.",
+            "fields": {},
+            "correlation_id": "csrf-test",
+        }
+    }
 
 
 @pytest.mark.django_db
@@ -159,6 +169,60 @@ def test_login_lockout_has_per_ip_and_account_backoff():
     assert response.status_code == 429
     assert get_state(key("account", user.email)).locked_until is not None
     assert get_state(key("ip", hash_ip("127.0.0.1"))).count >= 5
+
+
+@pytest.mark.django_db
+def test_login_failures_for_one_account_do_not_lock_out_another():
+    cache.clear()
+    first = make_user(email="first-login@example.com")
+    second = make_user(email="second-login@example.com")
+    client = APIClient()
+    for _ in range(5):
+        response = client.post(
+            "/api/auth/login/",
+            {"email": first.email, "password": "wrong"},
+            format="json",
+        )
+        assert response.status_code == 401
+    response = client.post(
+        "/api/auth/login/",
+        {"email": second.email, "password": "Password123!"},
+        format="json",
+    )
+    assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_login_ip_spray_control_triggers_across_accounts():
+    cache.clear()
+    client = APIClient()
+    for index in range(20):
+        user = make_user(email=f"spray-{index}@example.com")
+        response = client.post(
+            "/api/auth/login/",
+            {"email": user.email, "password": "wrong"},
+            format="json",
+        )
+        assert response.status_code == 401
+    victim = make_user(email="spray-victim@example.com")
+    response = client.post(
+        "/api/auth/login/",
+        {"email": victim.email, "password": "Password123!"},
+        format="json",
+    )
+    assert response.status_code == 429
+
+
+@pytest.mark.django_db
+def test_request_ip_requires_trusted_proxy_for_forwarded_headers():
+    request = APIRequestFactory().get(
+        "/",
+        REMOTE_ADDR="10.0.0.2",
+        HTTP_X_FORWARDED_FOR="198.51.100.1, 203.0.113.4",
+    )
+    assert request_ip(request) == "10.0.0.2"
+    with override_settings(AUTH_TRUSTED_PROXIES=["10.0.0.2"]):
+        assert request_ip(request) == "203.0.113.4"
 
 
 @pytest.mark.django_db
@@ -399,7 +463,7 @@ def test_successful_login_only_clears_account_throttle_counter():
 def test_signup_is_throttled_per_ip():
     cache.clear()
     client = APIClient()
-    for index in range(4):
+    for index in range(24):
         response = client.post(
             "/api/auth/signup/",
             {

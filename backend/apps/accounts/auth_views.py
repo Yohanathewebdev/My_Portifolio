@@ -52,7 +52,16 @@ from .auth_services import (
 )
 from .models import AuthSession, User
 from .services import signup
-from .throttling import ThrottleState, clear, get_state, key, record_failure
+from .throttling import (
+    ThrottleState,
+    clear,
+    get_state,
+    key,
+    record_failure,
+    record_ip_failure,
+    record_signup,
+    signup_key,
+)
 from .tokens import RefreshTokenReplay, create_access_token, hash_token
 
 REFRESH_COOKIE_PATH = "/api/auth/refresh/"
@@ -114,8 +123,9 @@ def _locked(keys: tuple[str, str]) -> bool:
 
 
 def _record_login_failure(user: User | None, request, email: str) -> ThrottleState:
-    states = [record_failure(identifier) for identifier in _throttle_keys(request, email)]
-    state = max(states, key=lambda item: item.count)
+    ip_key, account_key = _throttle_keys(request, email)
+    record_ip_failure(ip_key)
+    state = record_failure(account_key)
     if user is not None:
         record_auth_audit(action="login_failure", user=user)
     else:
@@ -153,10 +163,10 @@ class SignupView(PublicAuthView):
     def post(self, request):
         serializer = SignupSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        signup_identifier = key("signup-ip", hash_ip(request_ip(request)))
+        signup_identifier = signup_key(hash_ip(request_ip(request)))
         if get_state(signup_identifier).locked_until:
             raise Throttled(detail="Signup temporarily locked.")
-        signup_state = record_failure(signup_identifier)
+        signup_state = record_signup(signup_identifier)
         if signup_state.locked_until:
             raise Throttled(detail="Signup temporarily locked.")
 
