@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.import_linter_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+coverage.json
+htmlcov/
+.env
+*.sqlite3
+staticfiles/
+media/
+*.log
+SDD-source.md
