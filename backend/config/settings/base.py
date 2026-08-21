@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.billing",
     "apps.portfolios",
+    "apps.notifications",
 ]
 AUTH_USER_MODEL = "accounts.User"
 PORTFOLIO_RESOLVER = "apps.portfolios.resolvers.resolve_portfolio"
@@ -115,9 +116,26 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "apps.core.pagination.StandardPagination",
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.SessionAuthentication",
+        "apps.accounts.authentication.AccessTokenAuthentication",
     ],
 }
+CSRF_FAILURE_VIEW = "apps.core.exceptions.csrf_failure"
+AUTH_JWT_ISSUER = "portfolio-cms"
+AUTH_JWT_SIGNING_KEY = env("AUTH_JWT_SIGNING_KEY", default=SECRET_KEY)
+TOTP_ISSUER = "Portfolio CMS"
+AUTH_REFRESH_COOKIE = env("AUTH_REFRESH_COOKIE", default="portfolio_refresh")
+AUTH_ACCESS_TOKEN_LIFETIME_SECONDS = env("AUTH_ACCESS_TOKEN_LIFETIME_SECONDS", default=900)
+AUTH_REFRESH_TOKEN_LIFETIME_DAYS = env("AUTH_REFRESH_TOKEN_LIFETIME_DAYS", default=30)
+AUTH_TRUSTED_PROXIES = env("AUTH_TRUSTED_PROXIES", default=[])
+EMAIL_BACKEND = env("EMAIL_BACKEND", default="")
+EMAIL_HOST = env("EMAIL_HOST", default="")
+EMAIL_PORT = env("EMAIL_PORT", default=25)
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="no-reply@portfolio.local")
+BREACHED_PASSWORD_CHECK_ENABLED = True
+BREACHED_PASSWORD_CHECKER = env(
+    "BREACHED_PASSWORD_CHECKER",
+    default="apps.accounts.passwords.HIBPPasswordChecker",
+)
 SPECTACULAR_SETTINGS = {
     "TITLE": "Portfolio CMS API",
     "DESCRIPTION": "Phase 0 foundation API",

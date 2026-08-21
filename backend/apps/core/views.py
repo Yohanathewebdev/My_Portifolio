@@ -77,3 +77,7 @@ class PublicReadOnlyView:
     """Marker for views intentionally accessible without portfolio ownership."""
 
     permission_classes = [AllowAny]
+
+
+class NonTenantView:
+    """Marker for authenticated infrastructure views without tenant resources."""

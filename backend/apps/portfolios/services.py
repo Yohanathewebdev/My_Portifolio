@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from django.db import transaction
 from django.utils import timezone
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
+from apps.accounts.models import User
 from apps.billing.entitlements import check_and_consume
 from apps.core.audit import record_audit
 from apps.core.exceptions import ConflictError
@@ -76,9 +77,16 @@ def validate_portfolio_slug(slug: str, portfolio_id) -> None:
 
 @transaction.atomic
 def transition_publication(
-    *, portfolio: Portfolio, target: str, platform_actor: bool = False, actor=None
+    *,
+    portfolio: Portfolio,
+    target: str,
+    platform_actor: bool = False,
+    actor: User | None = None,
 ):
     source = portfolio.publication_state
+    if target == Portfolio.STATE_PUBLISHED and not platform_actor:
+        if actor is None or not actor.is_email_verified:
+            raise PermissionDenied("Email verification is required before publishing.")
     if target == Portfolio.STATE_SUSPENDED and not platform_actor:
         raise ConflictError("Only platform actors may suspend a portfolio.")
     if source == Portfolio.STATE_SUSPENDED and not platform_actor:

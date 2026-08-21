@@ -8,6 +8,8 @@ validate_production_security(
     secret_key=SECRET_KEY,
     allowed_hosts=ALLOWED_HOSTS,
     cors_allow_all=CORS_ALLOW_ALL_ORIGINS,
+    email_backend=EMAIL_BACKEND,
+    email_host=EMAIL_HOST,
 )
 
 SECURE_SSL_REDIRECT = True

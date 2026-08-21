@@ -44,6 +44,8 @@ def test_reserved_slug_and_historical_collision_rules():
 def test_every_legal_publication_transition_and_illegal_transition():
     account = make_account()
     actor = make_user()
+    actor.is_email_verified = True
+    actor.save(update_fields=["is_email_verified", "updated_at"])
     portfolio = Portfolio.all_objects.create(account=account, title="State", slug="state")
     for source, targets in LEGAL_TRANSITIONS.items():
         for target in targets:
@@ -55,6 +57,7 @@ def test_every_legal_publication_transition_and_illegal_transition():
                 platform_actor=(
                     source == Portfolio.STATE_SUSPENDED or target == Portfolio.STATE_SUSPENDED
                 ),
+                actor=actor,
             )
             assert portfolio.publication_state == target
             if target == Portfolio.STATE_PUBLISHED:

@@ -1,10 +1,28 @@
 from __future__ import annotations
 
+from django.http import JsonResponse
 from rest_framework import exceptions
 from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
 
 from .managers import UnscopedQueryError
+
+
+def csrf_failure(request, reason: str = "") -> JsonResponse:
+    correlation_id = getattr(request, "correlation_id", "") or request.META.get(
+        "HTTP_X_CORRELATION_ID", ""
+    )
+    return JsonResponse(
+        {
+            "error": {
+                "code": "csrf_failed",
+                "message": "CSRF verification failed.",
+                "fields": {},
+                "correlation_id": correlation_id,
+            }
+        },
+        status=403,
+    )
 
 
 class EntitlementExceeded(exceptions.APIException):

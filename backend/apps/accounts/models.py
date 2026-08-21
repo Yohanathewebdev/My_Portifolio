@@ -33,6 +33,11 @@ class UserManager(BaseUserManager["User"]):
 class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(unique=True)
     is_email_verified = models.BooleanField(default=False)
+    password_changed_at = models.DateTimeField(null=True, blank=True)
+    totp_secret = models.CharField(max_length=128, blank=True)
+    totp_pending_secret = models.CharField(max_length=128, blank=True)
+    totp_enabled = models.BooleanField(default=False)
+    totp_last_step = models.BigIntegerField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
 
@@ -43,6 +48,50 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
 
     def __str__(self) -> str:
         return self.email
+
+
+class AuthSession(BaseModel):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="auth_sessions")
+    family_id = models.UUIDField(db_index=True)
+    token_hash = models.CharField(max_length=64, unique=True)
+    user_agent = models.TextField(blank=True)
+    ip_hash = models.CharField(max_length=128, blank=True)
+    expires_at = models.DateTimeField()
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    replaced_by = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="replaces",
+    )
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["user", "-created_at"]),
+            models.Index(fields=["family_id", "-created_at"]),
+        ]
+
+
+class EmailVerificationToken(BaseModel):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="verification_tokens")
+    token_hash = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+
+
+class PasswordResetToken(BaseModel):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="reset_tokens")
+    token_hash = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+
+
+class RecoveryCode(BaseModel):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="recovery_codes")
+    code_hash = models.CharField(max_length=64, unique=True)
+    used_at = models.DateTimeField(null=True, blank=True)
 
 
 class Account(BaseModel):
