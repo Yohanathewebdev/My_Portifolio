@@ -29,7 +29,13 @@ INSTALLED_APPS = [
     "rest_framework",
     "drf_spectacular",
     "apps.core",
+    "apps.accounts",
+    "apps.billing",
+    "apps.portfolios",
 ]
+AUTH_USER_MODEL = "accounts.User"
+PORTFOLIO_RESOLVER = "apps.portfolios.resolvers.resolve_portfolio"
+ACCOUNT_RESOLVER = "apps.accounts.resolvers.resolve_accounts"
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",

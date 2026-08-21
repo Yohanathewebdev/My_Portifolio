@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 from django.db import models
 
 
@@ -17,7 +19,7 @@ class PortfolioScopedQuerySet(models.QuerySet[models.Model]):
     _explicit_unscoped_reason: str | None = None
 
     def _clone(self):
-        clone = super()._clone()  # type: ignore[misc]
+        clone = cast(PortfolioScopedQuerySet, super()._clone())  # type: ignore[misc]
         clone._portfolio_scope = self._portfolio_scope
         clone._explicit_unscoped_reason = self._explicit_unscoped_reason
         return clone
@@ -109,3 +111,65 @@ class PortfolioScopedManager(models.Manager.from_queryset(PortfolioScopedQuerySe
         instance = self.model(**kwargs)
         instance.save(using=self._db)
         return instance
+
+
+class AccountScopedQuerySet(models.QuerySet[models.Model]):
+    _account_scope: object | None = None
+
+    def _clone(self):
+        clone = cast(AccountScopedQuerySet, super()._clone())  # type: ignore[misc]
+        clone._account_scope = self._account_scope
+        return clone
+
+    def for_accounts(self, accounts: object) -> AccountScopedQuerySet:
+        if accounts is None:
+            raise ValueError("accounts are required")
+        clone = self._clone()
+        clone._account_scope = accounts
+        field_names = {field.name for field in self.model._meta.get_fields()}
+        lookup = "account_id__in" if "account" in field_names else "pk__in"
+        return clone.filter(**{lookup: accounts})
+
+    def _ensure_scope(self) -> None:
+        if self._account_scope is None:
+            raise UnscopedQueryError("Account-owned query requires .for_accounts(accounts)")
+
+    def _fetch_all(self) -> None:
+        self._ensure_scope()
+        super()._fetch_all()
+
+    def aggregate(self, *args, **kwargs):
+        self._ensure_scope()
+        return super().aggregate(*args, **kwargs)
+
+    def update(self, **kwargs):
+        self._ensure_scope()
+        return super().update(**kwargs)
+
+    def delete(self):
+        self._ensure_scope()
+        return super().delete()
+
+    def count(self):
+        self._ensure_scope()
+        return super().count()
+
+    def exists(self):
+        self._ensure_scope()
+        return super().exists()
+
+    def get(self, *args, **kwargs):
+        self._ensure_scope()
+        return super().get(*args, **kwargs)
+
+    def in_bulk(self, *args, **kwargs):
+        self._ensure_scope()
+        return super().in_bulk(*args, **kwargs)
+
+
+class AccountScopedManager(models.Manager.from_queryset(AccountScopedQuerySet)):  # type: ignore[misc]
+    def get_queryset(self) -> AccountScopedQuerySet:
+        raise UnscopedQueryError("Account-owned manager requires .for_accounts(accounts)")
+
+    def for_accounts(self, accounts: object) -> AccountScopedQuerySet:
+        return super().get_queryset().for_accounts(accounts)

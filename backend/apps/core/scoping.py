@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from django.urls import URLResolver
 
-from .views import PortfolioScopedViewSet, PublicReadOnlyView
+from .views import AccountScopedViewSet, PortfolioScopedViewSet, PublicReadOnlyView
 
 SCOPING_ALLOWLIST = {
     "healthz": "Liveness endpoint has no tenant data.",
@@ -38,10 +38,12 @@ def check_urlconf(urlconf, allowlist: dict[str, str] | None = None) -> list[Scop
         callback = pattern.callback
         view_cls = getattr(callback, "cls", None)
         view_name = getattr(view_cls, "__name__", getattr(callback, "__name__", repr(callback)))
-        if pattern.name in allowlist:
+        if pattern.name in allowlist or view_name == "APIRootView":
             continue
         if view_cls and (
-            issubclass(view_cls, PortfolioScopedViewSet) or issubclass(view_cls, PublicReadOnlyView)
+            issubclass(view_cls, PortfolioScopedViewSet)
+            or issubclass(view_cls, PublicReadOnlyView)
+            or issubclass(view_cls, AccountScopedViewSet)
         ):
             continue
         violations.append(

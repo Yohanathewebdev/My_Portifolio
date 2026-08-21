@@ -9,11 +9,17 @@ from rest_framework.test import APIRequestFactory
 from rest_framework.views import APIView
 from rest_framework.viewsets import ViewSet
 
+from apps.accounts.factories import AccountFactory
+from apps.accounts.models import Account
 from apps.core.managers import PortfolioScopedManager, UnscopedQueryError
 from apps.core.scoping import check_urlconf
 from apps.core.views import PortfolioScopedViewSet
+from apps.portfolios.models import Portfolio
 from apps.test_models.models import ScopedRecord
-from apps.test_portfolios.models import Portfolio
+
+
+def make_account() -> Account:
+    return cast(Account, AccountFactory())
 
 
 def test_unscoped_manager_operations_fail_loudly():
@@ -72,7 +78,11 @@ def manager_queryset():
 
 @pytest.mark.django_db
 def test_scoped_queryset_operations_execute_against_real_model():
-    portfolio = Portfolio.objects.create(name="Photographer")
+    portfolio = Portfolio.all_objects.create(
+        account=make_account(),
+        title="Photographer",
+        slug="photographer",
+    )
     first = cast(
         ScopedRecord,
         ScopedRecord.objects.create_for_portfolio(portfolio, name="First"),
@@ -93,7 +103,11 @@ def test_scoped_queryset_operations_execute_against_real_model():
 
 @pytest.mark.django_db
 def test_real_model_write_paths_refresh_soft_delete_cascade_and_related_scope():
-    portfolio = Portfolio.objects.create(name="Consultant")
+    portfolio = Portfolio.all_objects.create(
+        account=make_account(),
+        title="Consultant",
+        slug="consultant",
+    )
     record = cast(
         ScopedRecord,
         ScopedRecord.objects.create_for_portfolio(portfolio, name="Profile"),
@@ -118,7 +132,11 @@ def test_real_model_write_paths_refresh_soft_delete_cascade_and_related_scope():
 
 @pytest.mark.django_db
 def test_real_model_unscoped_read_still_fails():
-    Portfolio.objects.create(name="Engineer")
+    Portfolio.all_objects.create(
+        account=make_account(),
+        title="Engineer",
+        slug="engineer",
+    )
     with pytest.raises(UnscopedQueryError):
         ScopedRecord.objects.all()
 
