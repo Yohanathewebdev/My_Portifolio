@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+from django.utils import timezone
+
+from apps.core.models import AuditLog
+
+from .models import Project, Tag
+from .selectors import get_project_for_portfolio
+
+
+def _write_audit(*, actor, portfolio, action: str, project: Project, before: dict, after: dict) -> None:
+    AuditLog.objects.create(
+        actor=actor,
+        actor_type="user",
+        account_id=portfolio.account_id,
+        portfolio_id=portfolio.id,
+        action=action,
+        target_type="project",
+        target_id=str(project.id),
+        before=before,
+        after=after,
+    )
+
+
+def _attach_tags(project: Project, portfolio, names: list[str], *, replace: bool = False) -> None:
+    tags = []
+    for name in names:
+        slug = name.strip().lower().replace(" ", "-")[:70]
+        tag, _ = Tag.objects.get_or_create(
+            portfolio=portfolio, slug=slug, defaults={"name": name.strip()}
+        )
+        tags.append(tag)
+    if replace:
+        project.tags.set(tags)
+    else:
+        project.tags.add(*tags)
+
+
+def create_project(*, portfolio, actor, tag_names: list[str] | None = None, **fields) -> Project:
+    project = Project.objects.create_for_portfolio(portfolio, **fields)
+    if tag_names:
+        _attach_tags(project, portfolio, tag_names)
+    _write_audit(
+        actor=actor,
+        portfolio=portfolio,
+        action="project.create",
+        project=project,
+        before={},
+        after={"title": project.title, "slug": project.slug},
+    )
+    return project
+
+
+def update_project(
+    *, portfolio, actor, project_id, tag_names: list[str] | None = None, **fields
+) -> Project:
+    project = get_project_for_portfolio(portfolio, project_id)
+    before = {"title": project.title, "publication_state": project.publication_state}
+    for key, value in fields.items():
+        setattr(project, key, value)
+    project.full_clean()
+    project.save()
+    if tag_names is not None:
+        _attach_tags(project, portfolio, tag_names, replace=True)
+    _write_audit(
+        actor=actor,
+        portfolio=portfolio,
+        action="project.update",
+        project=project,
+        before=before,
+        after={"title": project.title, "publication_state": project.publication_state},
+    )
+    return project
+
+
+def publish(*, portfolio, actor, project_id) -> Project:
+    """The only legal way to set publication_state=published (§12.1)."""
+    project = get_project_for_portfolio(portfolio, project_id)
+    before_state = project.publication_state
+    project.publication_state = Project.STATE_PUBLISHED
+    project.published_at = timezone.now()
+    project.full_clean()
+    project.save()
+    _write_audit(
+        actor=actor,
+        portfolio=portfolio,
+        action="project.publish",
+        project=project,
+        before={"publication_state": before_state},
+        after={"publication_state": project.publication_state},
+    )
+    # TODO(publishing-app, §16.5): enqueue cache invalidation for surrogate
+    # key `portfolio:<uuid>` once the cache-invalidation trigger exists.
+    # Nothing currently purges CDN cache when a project is published.
+    return project
+
+
+def unpublish(*, portfolio, actor, project_id) -> Project:
+    project = get_project_for_portfolio(portfolio, project_id)
+    before_state = project.publication_state
+    project.publication_state = Project.STATE_UNPUBLISHED
+    project.full_clean()
+    project.save()
+    _write_audit(
+        actor=actor,
+        portfolio=portfolio,
+        action="project.unpublish",
+        project=project,
+        before={"publication_state": before_state},
+        after={"publication_state": project.publication_state},
+    )
+    return project
+
+
+def delete_project(*, portfolio, actor, project_id) -> None:
+    project = get_project_for_portfolio(portfolio, project_id)
+    _write_audit(
+        actor=actor,
+        portfolio=portfolio,
+        action="project.delete",
+        project=project,
+        before={"publication_state": project.publication_state},
+        after={},
+    )
+    project.delete()  # soft delete, per SoftDeleteModel

@@ -1,0 +1,25 @@
+from __future__ import annotations
+
+from django.shortcuts import get_object_or_404
+
+from .models import Project
+
+
+def list_projects_for_portfolio(portfolio):
+    """CMS-facing: all states, owner/editor view."""
+    return Project.objects.for_portfolio(portfolio).order_by("sort_order", "-created_at")
+
+
+def get_project_for_portfolio(portfolio, project_id):
+    return get_object_or_404(Project.objects.for_portfolio(portfolio), pk=project_id)
+
+
+def list_published_projects(portfolio):
+    """Public selector (§16.2) — read-only, published-only, replica-safe.
+    Wire this into the `public` renderer once it reads from this app.
+    """
+    return (
+        Project.objects.for_portfolio(portfolio)
+        .filter(publication_state=Project.STATE_PUBLISHED)
+        .order_by("sort_order", "-published_at")
+    )

@@ -32,6 +32,11 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.billing",
     "apps.portfolios",
+    "apps.professionals",
+    "apps.profiles",
+    "apps.projects",
+    "apps.career",
+    "apps.content",
     "apps.notifications",
 ]
 AUTH_USER_MODEL = "accounts.User"

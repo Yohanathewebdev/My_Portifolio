@@ -1,7 +1,8 @@
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.routers import DefaultRouter
-
+from apps.content.views import ArticleViewSet, MediaAssetViewSet
+from apps.projects.views import ProjectViewSet
 from apps.accounts.auth_views import (
     CsrfTokenView,
     LoginTwoFactorView,
@@ -28,6 +29,11 @@ from apps.api.views import (
     MembershipViewSet,
     PortfolioViewSet,
 )
+from apps.public.views import PublicPortfolioDetailView
+
+from apps.career.views import AchievementViewSet, CertificationViewSet, EducationViewSet, ExperienceViewSet, SkillViewSet
+from apps.profiles.views import ProfileViewSet
+from apps.professionals.views import PortfolioProfessionViewSet, ProfessionViewSet
 from apps.core.health import healthz, readyz
 from apps.core.views import PublicReadOnlyView
 
@@ -44,6 +50,7 @@ router = DefaultRouter()
 router.register("accounts", AccountViewSet, basename="account")
 router.register("me", CurrentUserViewSet, basename="me")
 router.register("portfolios", PortfolioViewSet, basename="portfolio")
+router.register("professions", ProfessionViewSet, basename="profession")
 
 urlpatterns = [
     path("api/", include(router.urls)),
@@ -121,8 +128,84 @@ urlpatterns = [
         ),
         name="portfolio-detail",
     ),
+    path("public/portfolios/<slug:slug>/", PublicPortfolioDetailView.as_view(), name="public-portfolio-detail"),
+    path(
+        "api/portfolios/<uuid:portfolio_id>/profile/",
+        ProfileViewSet.as_view({"get": "retrieve", "put": "update", "patch": "partial_update"}),
+        name="profile-detail",
+    ),
+    path(
+        "api/portfolios/<uuid:portfolio_id>/professions/",
+        PortfolioProfessionViewSet.as_view({"get": "list", "post": "create"}),
+        name="portfolio-profession-list",
+    ),
+    path(
+        "api/portfolios/<uuid:portfolio_id>/professions/<uuid:pk>/",
+        PortfolioProfessionViewSet.as_view({"delete": "destroy", "patch": "partial_update"}),
+        name="portfolio-profession-detail",
+    ),
+    path(
+        "api/portfolios/<uuid:portfolio_id>/experiences/",
+        ExperienceViewSet.as_view({"get": "list", "post": "create"}), name="experience-list"
+    ),
+    path("api/portfolios/<uuid:portfolio_id>/experiences/<uuid:pk>/", ExperienceViewSet.as_view({"get": "retrieve", "patch": "partial_update", "delete": "destroy"}), name="experience-detail"),
+    path("api/portfolios/<uuid:portfolio_id>/education/", EducationViewSet.as_view({"get": "list", "post": "create"}), name="education-list"),
+    path("api/portfolios/<uuid:portfolio_id>/education/<uuid:pk>/", EducationViewSet.as_view({"get": "retrieve", "patch": "partial_update", "delete": "destroy"}), name="education-detail"),
+    path("api/portfolios/<uuid:portfolio_id>/skills/", SkillViewSet.as_view({"get": "list", "post": "create"}), name="skill-list"),
+    path("api/portfolios/<uuid:portfolio_id>/skills/<uuid:pk>/", SkillViewSet.as_view({"get": "retrieve", "patch": "partial_update", "delete": "destroy"}), name="skill-detail"),
+    path("api/portfolios/<uuid:portfolio_id>/certifications/", CertificationViewSet.as_view({"get": "list", "post": "create"}), name="certification-list"),
+    path("api/portfolios/<uuid:portfolio_id>/certifications/<uuid:pk>/", CertificationViewSet.as_view({"get": "retrieve", "patch": "partial_update", "delete": "destroy"}), name="certification-detail"),
+    path("api/portfolios/<uuid:portfolio_id>/achievements/", AchievementViewSet.as_view({"get": "list", "post": "create"}), name="achievement-list"),
+    path("api/portfolios/<uuid:portfolio_id>/achievements/<uuid:pk>/", AchievementViewSet.as_view({"get": "retrieve", "patch": "partial_update", "delete": "destroy"}), name="achievement-detail"),
     path("healthz", healthz, name="healthz"),
     path("readyz", readyz, name="readyz"),
     path("api/schema/", PublicSchemaView.as_view(), name="schema"),
     path("api/docs/", PublicSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
+    path(
+        "api/portfolios/<uuid:portfolio_id>/articles/",
+        ArticleViewSet.as_view({"get": "list", "post": "create"}), 
+        name="article-list"
+    ),
+    path(
+        "api/portfolios/<uuid:portfolio_id>/articles/<uuid:pk>/", 
+        ArticleViewSet.as_view({"get": "retrieve", "patch": "partial_update", "delete": "destroy"}), 
+        name="article-detail"
+    ),
+    path(
+        "api/portfolios/<uuid:portfolio_id>/articles/<uuid:pk>/publish/", 
+        ArticleViewSet.as_view({"post": "publish"}), 
+        name="article-publish"
+    ),
+    path(
+        "api/portfolios/<uuid:portfolio_id>/media/",
+        MediaAssetViewSet.as_view({"get": "list", "post": "create"}), 
+        name="media-list"
+    ),
+    path(
+        "api/portfolios/<uuid:portfolio_id>/media/<uuid:pk>/", 
+        MediaAssetViewSet.as_view({"get": "retrieve", "patch": "partial_update", "delete": "destroy"}), 
+        name="media-detail"
+    ),
+    path(
+            "api/portfolios/<uuid:portfolio_id>/projects/",
+            ProjectViewSet.as_view({"get": "list", "post": "create"}),
+            name="project-list",
+        ),
+        path(
+            "api/portfolios/<uuid:portfolio_id>/projects/<uuid:pk>/",
+            ProjectViewSet.as_view(
+                {"get": "retrieve", "patch": "partial_update", "delete": "destroy"}
+            ),
+            name="project-detail",
+        ),
+        path(
+            "api/portfolios/<uuid:portfolio_id>/projects/<uuid:pk>/publish/",
+            ProjectViewSet.as_view({"post": "publish"}),
+            name="project-publish",
+        ),
+        path(
+            "api/portfolios/<uuid:portfolio_id>/projects/<uuid:pk>/unpublish/",
+            ProjectViewSet.as_view({"post": "unpublish"}),
+            name="project-unpublish",
+        ),
 ]
